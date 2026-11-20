@@ -851,6 +851,10 @@ public struct RetryPolicy: Sendable {
 
 - 单 Xcode 工程 + 4 个本地 SPM 包：`CoreKit`、`LLMKit`、`WebSeamKit`、`StorageKit`（便于单测与编译隔离）。
 - 注意：**不要叫 `WebKit`**，会与 Apple 的 WebKit framework 模块名冲突。
+- 现状：`igent.xcodeproj`（objectVersion 77 + 文件系统同步组，**新增文件无需改工程文件**）+ `Packages/CoreKit` 已就位，模拟器可运行。
+- 构建：`xcodebuild -project igent.xcodeproj -scheme igent -destination 'platform=iOS Simulator,name=iPhone 16' build`
+- 单测：`cd Packages/CoreKit && swift test`
+- 工程由 `scripts/gen_xcodeproj.py` 一次性生成；**之后请在 Xcode 里编辑，不要重跑该脚本**（会覆盖）。
 - 依赖：GRDB、swift-markdown、Splash、SwiftMath、SwiftSoup。
 - 测试：
   - 每个适配器一组 golden fixture（`.json` 请求体 + `.sse` 原始流），断言 `[StreamChunk]` 与最终 `[ContentBlock]`。
@@ -876,7 +880,7 @@ public struct RetryPolicy: Sendable {
 
 **关键路径**：P0 的 `StreamChunk` 契约和 `BlockAssembler` 一旦定错，后面阶段全部返工。建议 P0 先写 fixture 再写适配器（测试先行）。
 
-**进度**（2026-11-20）：P0 第一步完成 —— `Packages/CoreKit` 落地三份核心定义（`ContentBlock` / `StreamChunk` / `Message`）+ `BlockAssembler` + `SSEDecoder`，23 个单测全绿（`swift test`）。尚未做：适配器、夹具、Xcode 工程。
+**进度**（2026-11-20）：P0 第一步完成 —— `Packages/CoreKit` 落地三份核心定义（`ContentBlock` / `StreamChunk` / `Message`）+ `BlockAssembler` + `SSEDecoder`，23 个单测全绿；`igent.xcodeproj` 生成并验证：`BUILD SUCCEEDED`，模拟器启动后完成一次「字节 → SSE 帧 → 内容块」的运行时自检。尚未做：适配器、golden 夹具。
 
 **P5 排在 P6 之前**：skill 依赖 `context/message` 与 surface 替换，这两样已在 P1 就位；而压缩（P6）需要把 skill 正文标记为 `ephemeral`，先有 skill 才好验证压缩是否正确丢弃。
 
