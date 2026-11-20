@@ -323,7 +323,8 @@ struct ChatView: View {
         }
         let configuration = TurnOrchestrator.Configuration(
             provider: profile.id,
-            model: env.activeModel
+            model: env.activeModel,
+            contextWindow: profile.contextWindow
         )
         let skills = env.resolveSkills(pending: model.pendingSkill, text: model.draft)
         model.send(

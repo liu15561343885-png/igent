@@ -19,6 +19,7 @@ struct ProviderSettingsView: View {
                 modelSection
                 imageSection
                 webSearchSection
+                compactionSection
                 debugSection
             }
             .navigationTitle("设置")
@@ -216,6 +217,20 @@ struct ProviderSettingsView: View {
             Text("图片生成")
         } footer: {
             Text("与对话厂商分开配置：对话可以用 DeepSeek，画图用 OpenAI。OpenAI 填 gpt-image-1 或 dall-e-3；Gemini 填 gemini-2.5-flash-image，Base URL 填到 v1beta。")
+        }
+    }
+
+    @ViewBuilder
+    private var compactionSection: some View {
+        Section {
+            Toggle("自动压缩上下文", isOn: Binding(
+                get: { env.autoCompactionEnabled },
+                set: { env.autoCompactionEnabled = $0 }
+            ))
+        } header: {
+            Text("上下文")
+        } footer: {
+            Text("每轮发送前估算输入量，超过窗口的 80% 就先压缩较早的历史；厂商报「上下文超长」时也会压缩一次再重试。手动压缩在对话页右上角菜单里。")
         }
     }
 

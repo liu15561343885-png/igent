@@ -49,6 +49,15 @@ final class AppEnvironment {
     /// 图片厂商配置变化时自增，方便界面刷新（配置存在 UserDefaults 里，不参与观察）。
     var imageProviderRevision = 0
 
+    /// 自动压缩开关。改它会即时影响正在运行的编排器。
+    var autoCompactionEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(autoCompactionEnabled, forKey: "autoCompaction")
+            let policy: CompactionPolicy? = autoCompactionEnabled ? .default : nil
+            Task { await orchestrator.setPolicy(policy) }
+        }
+    }
+
     var activeProfile: ProviderProfile? {
         profiles.first { $0.id == activeProfileID }
     }
@@ -77,6 +86,7 @@ final class AppEnvironment {
         compaction = CompactionService(store: store, runtime: runtime)
         titles = TitleService(store: store, runtime: runtime)
 
+        autoCompactionEnabled = UserDefaults.standard.object(forKey: "autoCompaction") as? Bool ?? true
         activeProfileID = UserDefaults.standard.string(forKey: "activeProfileID")
         activeModel = UserDefaults.standard.string(forKey: "activeModel") ?? ""
         webSearchKind = UserDefaults.standard.string(forKey: "webSearchKind")
@@ -326,11 +336,14 @@ extension AppEnvironment {
     /// 压缩较早的历史。返回被压掉的消息数，nil 表示不值得压。
     func compactCurrentSession() async -> Int? {
         guard let chat = chat, let profile = activeProfile else { return nil }
+        // 手动压缩按固定条数保留，行为可预测；自动压缩才按 token 预算。
         let outcome = try? await compaction.compact(
             .init(
                 sessionID: chat.sessionID,
                 provider: profile.id,
-                model: activeModel
+                model: activeModel,
+                keepRecentMessages: 6,
+                contextWindow: profile.contextWindow
             )
         )
         guard let outcome else { return nil }

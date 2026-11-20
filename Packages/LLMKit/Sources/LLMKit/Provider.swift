@@ -31,6 +31,8 @@ public struct Capabilities: Codable, Sendable, Equatable, Hashable {
     public var systemStyle: SystemStyle
     /// 请求未指定输出上限时的默认值（Anthropic 的 `max_tokens` 必填）。
     public var defaultMaxTokens: Int?
+    /// 模型上下文窗口。用于自动压缩的阈值判断；nil 表示未知（按 128k 处理）。
+    public var contextWindow: Int?
 
     public init(
         vision: Bool = false,
@@ -40,7 +42,8 @@ public struct Capabilities: Codable, Sendable, Equatable, Hashable {
         streamUsage: Bool = true,
         usesMaxCompletionTokens: Bool = false,
         systemStyle: SystemStyle = .message,
-        defaultMaxTokens: Int? = nil
+        defaultMaxTokens: Int? = nil,
+        contextWindow: Int? = nil
     ) {
         self.vision = vision
         self.imageOut = imageOut
@@ -50,6 +53,7 @@ public struct Capabilities: Codable, Sendable, Equatable, Hashable {
         self.usesMaxCompletionTokens = usesMaxCompletionTokens
         self.systemStyle = systemStyle
         self.defaultMaxTokens = defaultMaxTokens
+        self.contextWindow = contextWindow
     }
 }
 
@@ -115,6 +119,9 @@ public struct ProviderProfile: Sendable, Codable, Equatable, Hashable {
     }
 
     public var chatURL: URL? { chatURL(for: "") }
+
+    /// 上下文窗口；厂商没声明时按 128k 估。
+    public var contextWindow: Int { capabilities.contextWindow ?? 128_000 }
 }
 
 public extension ProviderProfile {
@@ -141,7 +148,10 @@ public extension ProviderProfile {
             family: .openAIResponses,
             baseURL: URL(string: baseURL)!,
             chatPath: "/responses",
-            capabilities: Capabilities(vision: true, reasoning: true, streamUsage: true, systemStyle: .topLevel)
+            capabilities: Capabilities(
+                vision: true, reasoning: true, streamUsage: true,
+                systemStyle: .topLevel, contextWindow: 200_000
+            )
         )
     }
 
@@ -158,7 +168,8 @@ public extension ProviderProfile {
                 reasoning: true,
                 streamUsage: true,
                 systemStyle: .systemInstruction,
-                defaultMaxTokens: 8192
+                defaultMaxTokens: 8192,
+                contextWindow: 1_048_576
             ),
             auth: .apiKey(header: "x-goog-api-key")
         )

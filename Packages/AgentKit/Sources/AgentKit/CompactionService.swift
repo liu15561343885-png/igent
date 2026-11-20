@@ -12,23 +12,28 @@ public actor CompactionService {
         public var sessionID: SessionID
         public var provider: String
         public var model: String
-        /// 保留最近多少条消息不动。
-        public var keepRecentMessages: Int
-        /// 少于这个条数就不压，避免把短会话压成一句话。
-        public var minimumMessages: Int
+        /// 手动压缩时强制保留的条数；nil 表示交给 policy 按 token 预算决定。
+        public var keepRecentMessages: Int?
+        public var policy: CompactionPolicy
+        public var contextWindow: Int
+        public var reservedOutput: Int
 
         public init(
             sessionID: SessionID,
             provider: String,
             model: String,
-            keepRecentMessages: Int = 6,
-            minimumMessages: Int = 12
+            keepRecentMessages: Int? = nil,
+            policy: CompactionPolicy = .default,
+            contextWindow: Int = 128_000,
+            reservedOutput: Int = 4_096
         ) {
             self.sessionID = sessionID
             self.provider = provider
             self.model = model
             self.keepRecentMessages = keepRecentMessages
-            self.minimumMessages = minimumMessages
+            self.policy = policy
+            self.contextWindow = contextWindow
+            self.reservedOutput = reservedOutput
         }
     }
 
@@ -62,11 +67,26 @@ public actor CompactionService {
 
     public func compact(_ request: Request) async throws -> Outcome? {
         let projection = try await store.projection(for: request.sessionID)
-        guard projection.messages.count >= request.minimumMessages else { return nil }
 
-        let keep = max(2, request.keepRecentMessages)
-        let compactCount = projection.messages.count - keep
-        guard compactCount > 0 else { return nil }
+        let compactCount: Int
+        if let keep = request.keepRecentMessages {
+            // 手动压缩：按条数保留，行为可预测。
+            guard projection.messages.count > max(2, keep) else { return nil }
+            compactCount = projection.messages.count - max(2, keep)
+        } else {
+            // 自动压缩：按 token 预算保留尾部。
+            let tokens = projection.messages.map { TokenEstimator.estimate($0) }
+            let retain = request.policy.retainTokens(
+                contextWindow: request.contextWindow,
+                reservedOutput: request.reservedOutput
+            )
+            compactCount = request.policy.compactCount(
+                messageTokens: tokens,
+                retainTokens: retain,
+                minimumMessages: request.policy.minimumMessages
+            )
+            guard compactCount > 0 else { return nil }
+        }
 
         let targets = Array(projection.messages.prefix(compactCount))
         let seqs = Array(projection.messageSeqs.prefix(compactCount))

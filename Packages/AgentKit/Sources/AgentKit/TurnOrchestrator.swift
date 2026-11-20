@@ -35,29 +35,43 @@ public actor TurnOrchestrator {
         public var system: String?
         public var temperature: Double?
         public var maxTokens: Int?
+        /// 模型上下文窗口，用于自动压缩的阈值判断。
+        public var contextWindow: Int
 
         public init(
             provider: String,
             model: String,
             system: String? = nil,
             temperature: Double? = nil,
-            maxTokens: Int? = nil
+            maxTokens: Int? = nil,
+            contextWindow: Int = 128_000
         ) {
             self.provider = provider
             self.model = model
             self.system = system
             self.temperature = temperature
             self.maxTokens = maxTokens
+            self.contextWindow = contextWindow
         }
     }
 
     private let store: SessionStore
     private let runtime: LlmRuntime
+    private let compactor: CompactionService
     private var activeTask: Task<Void, Never>?
 
-    public init(store: SessionStore, runtime: LlmRuntime) {
+    /// 自动压缩策略。设为 nil 可关闭（手动压缩仍然可用）。
+    private(set) var policy: CompactionPolicy?
+
+    public func setPolicy(_ policy: CompactionPolicy?) {
+        self.policy = policy
+    }
+
+    public init(store: SessionStore, runtime: LlmRuntime, policy: CompactionPolicy? = .default) {
         self.store = store
         self.runtime = runtime
+        self.compactor = CompactionService(store: store, runtime: runtime)
+        self.policy = policy
     }
 
     public var isRunning: Bool { activeTask != nil }
@@ -118,7 +132,12 @@ public actor TurnOrchestrator {
         var step = 0
 
         do {
-            let projection = try await store.projection(for: sessionID)
+            var projection = try await store.projection(for: sessionID)
+
+            // ① 开回合前先看压力：超过阈值就把较早的历史压掉再发，
+            //    否则这一轮很可能直接撞上上下文上限。
+            projection = await autoCompactIfNeeded(sessionID: sessionID, projection: projection, configuration: configuration)
+
             turn = projection.lastTurn + 1
             step = 1
 
@@ -128,24 +147,52 @@ public actor TurnOrchestrator {
             try await store.append(.stepStart(turn: turn, step: step), to: sessionID)
             continuation.yield(.started(turn: turn))
 
-            let options = GenerateOptions(
-                provider: configuration.provider,
-                model: configuration.model,
-                messages: projection.messages + [userMessage],
-                system: configuration.system,
-                temperature: configuration.temperature,
-                maxTokens: configuration.maxTokens
-            )
+            var history = projection.messages + [userMessage]
+            var recoveredFromOverflow = false
 
-            for try await chunk in await runtime.stream(options) {
-                if Task.isCancelled { break }
-                assembler.push(chunk)
-                if case let .usage(value) = chunk { usage = value }
-                if case let .finish(reason, providerMeta) = chunk {
-                    finish = reason
-                    meta = providerMeta
+            while true {
+                assembler = BlockAssembler()
+                usage = nil
+                meta = nil
+
+                let options = GenerateOptions(
+                    provider: configuration.provider,
+                    model: configuration.model,
+                    messages: history,
+                    system: configuration.system,
+                    temperature: configuration.temperature,
+                    maxTokens: configuration.maxTokens
+                )
+
+                do {
+                    for try await chunk in await runtime.stream(options) {
+                        if Task.isCancelled { break }
+                        assembler.push(chunk)
+                        if case let .usage(value) = chunk { usage = value }
+                        if case let .finish(reason, providerMeta) = chunk {
+                            finish = reason
+                            meta = providerMeta
+                        }
+                        continuation.yield(.chunk(chunk))
+                    }
+                } catch {
+                    finish = .error(Self.failure(from: error))
                 }
-                continuation.yield(.chunk(chunk))
+
+                // ② 厂商报上下文溢出：估算低估了，压缩一次再试。
+                //    只重试一次——若压完还溢出，说明单条消息本身就超限，再试也没用。
+                if case let .error(failure) = finish,
+                   failure.code == .contextWindowExceeded,
+                   policy?.overflowRecovery == true,
+                   !recoveredFromOverflow {
+                    recoveredFromOverflow = true
+                    let compacted = await compactNow(sessionID: sessionID, configuration: configuration)
+                    if compacted {
+                        history = (try? await store.projection(for: sessionID).messages) ?? history
+                        continue
+                    }
+                }
+                break
             }
         } catch {
             finish = .error(Self.failure(from: error))
@@ -228,6 +275,45 @@ public actor TurnOrchestrator {
                 interrupted: true
             )))
         }
+    }
+
+    /// 估算当前请求的输入量，超过阈值就先压缩。
+    private func autoCompactIfNeeded(
+        sessionID: SessionID,
+        projection: SurfaceProjection,
+        configuration: Configuration
+    ) async -> SurfaceProjection {
+        guard let policy else { return projection }
+
+        let inputTokens = TokenEstimator.estimate(projection.messages)
+            + TokenEstimator.estimate(configuration.system)
+        guard policy.shouldCompact(
+            inputTokens: inputTokens,
+            messageCount: projection.messages.count,
+            contextWindow: configuration.contextWindow,
+            reservedOutput: configuration.maxTokens ?? 4_096
+        ) else {
+            return projection
+        }
+
+        let compacted = await compactNow(sessionID: sessionID, configuration: configuration)
+        guard compacted else { return projection }
+        return (try? await store.projection(for: sessionID)) ?? projection
+    }
+
+    @discardableResult
+    private func compactNow(sessionID: SessionID, configuration: Configuration) async -> Bool {
+        guard let policy else { return false }
+        let request = CompactionService.Request(
+            sessionID: sessionID,
+            provider: configuration.provider,
+            model: configuration.model,
+            keepRecentMessages: nil,
+            policy: policy,
+            contextWindow: configuration.contextWindow,
+            reservedOutput: configuration.maxTokens ?? 4_096
+        )
+        return (try? await compactor.compact(request)) != nil
     }
 
     private static func failure(from error: Error) -> LlmFailure {
