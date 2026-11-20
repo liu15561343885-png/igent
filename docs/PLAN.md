@@ -27,6 +27,7 @@
 | 语言/框架 | Swift 6 严格并发、SwiftUI、Observation、GRDB |
 | 分发 | 自用：Xcode 直装 / TestFlight / 自签，无需审核 |
 | 后端 | 无。纯客户端 BYOK |
+| 数据边界 | **完全本地**：无后端、无中继、无桥接、无遥测。唯一出站流量是直连用户配置的厂商 API |
 | 工具调用 | **不存在**。模型永不产生 call，步骤由编排器决定 |
 | 服务端检索 | 允许（OpenAI `web_search`、Gemini `google_search`、Anthropic `web_search_20250305`、xAI Live Search、Perplexity） |
 | 联网兜底 | 自建 search→fetch→extract 管线 |
@@ -217,7 +218,7 @@ public enum StreamChunk: Sendable {
 3. 已被 `block-end` 关闭的 index 再收到 delta → 丢弃（防上游异常撑爆内存）。
 4. `usage` 至多一次；`finish` 恰一次且为终态；适配器抛错由 `LlmRuntime` 归一化为 `finish(.error/aborted)`。
 5. 适配器私有元数据（response id、原生 stop reason）走 `finish.meta`，不进内容块。
-6. **载体无关**：直连厂商用 SSE，将来桥接 DSH 用 WebSocket `item` 帧（`{type:'item',value}`），两者都归一到本契约；`StreamChunk` 不感知传输层。
+6. **载体无关**：SSE（OpenAI 兼容 / Anthropic / Gemini）与 NDJSON（Ollama 原生）都归一到本契约；`StreamChunk` 不感知传输层。
 
 ### 4.4 终止原因 / 用量 / 失败
 
@@ -848,7 +849,8 @@ public struct RetryPolicy: Sendable {
 
 ## 15. 工程组织
 
-- 单 Xcode 工程 + 4 个本地 SPM 包：`CoreKit`、`LLMKit`、`WebKit`、`StorageKit`（便于单测与编译隔离）。
+- 单 Xcode 工程 + 4 个本地 SPM 包：`CoreKit`、`LLMKit`、`WebSeamKit`、`StorageKit`（便于单测与编译隔离）。
+- 注意：**不要叫 `WebKit`**，会与 Apple 的 WebKit framework 模块名冲突。
 - 依赖：GRDB、swift-markdown、Splash、SwiftMath、SwiftSoup。
 - 测试：
   - 每个适配器一组 golden fixture（`.json` 请求体 + `.sse` 原始流），断言 `[StreamChunk]` 与最终 `[ContentBlock]`。
@@ -873,6 +875,8 @@ public struct RetryPolicy: Sendable {
 | **P7 打磨** | 3–5 天 | iPad 布局、键盘、快捷指令、暗色、iCloud 备份（可选） | 日常自用替换掉现用客户端 |
 
 **关键路径**：P0 的 `StreamChunk` 契约和 `BlockAssembler` 一旦定错，后面阶段全部返工。建议 P0 先写 fixture 再写适配器（测试先行）。
+
+**进度**（2026-11-20）：P0 第一步完成 —— `Packages/CoreKit` 落地三份核心定义（`ContentBlock` / `StreamChunk` / `Message`）+ `BlockAssembler` + `SSEDecoder`，23 个单测全绿（`swift test`）。尚未做：适配器、夹具、Xcode 工程。
 
 **P5 排在 P6 之前**：skill 依赖 `context/message` 与 surface 替换，这两样已在 P1 就位；而压缩（P6）需要把 skill 正文标记为 `ephemeral`，先有 skill 才好验证压缩是否正确丢弃。
 
@@ -958,14 +962,11 @@ DSH 的 API 词汇和 igent 的 Core 词汇本来就是同一套，所以桥接�
 - **WebView 套壳 SPA**：dshgo 这么做是为了复用 DSH 前端；igent 的流式渲染必须原生，WebView 会让长文滚动与键盘交互变糟。
 - **绕 `/api` 栅栏**：那是"电脑当服务器"的场景，igent 不需要。
 
-### 19.6 可选 P8：`DSHBridgeAdapter`
+### 19.6 桥接：已排除
 
-若之后想要"Mac 不在身边也能用同一套配置"，在主线完成后追加：
+"完全本地"是硬约束，因此不做 `DSHBridgeAdapter`。上面 §19.2 的映射表保留，只作为**词汇对齐的证据**——它证明了 Core 词汇与线上协议同构，将来若要对接别的载体（Ollama NDJSON、自建端点协议）成本同样很低。
 
-- `ProviderProfile.family = "dsh-bridge"`，字段：`baseURL`、`launchToken`／`cookie`、`sessionFilter`
-- 前置：电脑跑一个 host/origin 改写代理（可借鉴 `lib/proxy.mjs`），或用 Tailscale 直连
-- 范围：只提供对话与会话同步；图片生成仍走 igent 自己的适配器
-- 工作量：3–5 天（协议已实测、映射已明确）
+代价说清楚：放弃桥接 = 放弃"Mac 上已配好的厂商与 skill 自动同步到手机"。替代方案是手工把 `~/.dsh/skills` 里的目录拷进 `Documents/Skills/`，一次性的，可接受。
 
 ---
 
