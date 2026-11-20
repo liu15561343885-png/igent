@@ -63,6 +63,18 @@ struct MessageBubble: View {
         }
     }
 
+    /// 应用侧检索注入的证据。之前这个块在界面上完全不可见，
+    /// 用户只会觉得"答案突然变准了"，不知道发生过检索。
+    private var contextRows: [(icon: String, text: String)] {
+        message.blocks.compactMap { block in
+            guard case let .context(evidence) = block else { return nil }
+            let count = evidence.sources.count
+            let suffix = count > 0 ? " · \(count) 个来源" : ""
+            let query = evidence.query.isEmpty ? "联网检索" : evidence.query
+            return ("globe", "已检索：\(query)\(suffix)")
+        }
+    }
+
     private var citations: [Citation] {
         message.blocks.compactMap { block -> Citation? in
             if case let .citation(value) = block { value } else { nil }
@@ -99,12 +111,12 @@ struct MessageBubble: View {
                     }
                 }
 
-                if !providerRows.isEmpty {
+                if !providerRows.isEmpty || !contextRows.isEmpty {
                     VStack(alignment: .leading, spacing: 3) {
-                        ForEach(Array(providerRows.enumerated()), id: \.offset) { _, row in
+                        ForEach(Array((providerRows + contextRows).enumerated()), id: \.offset) { _, row in
                             Label(row.text, systemImage: row.icon)
                                 .font(.caption2)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(isUser ? Color.white.opacity(0.85) : Color.secondary)
                                 .lineLimit(1)
                         }
                     }
