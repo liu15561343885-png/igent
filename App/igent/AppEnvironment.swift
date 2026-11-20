@@ -93,9 +93,9 @@ final class AppEnvironment {
         guard let session = try? await store.createSession(title: "示例对话") else { return }
         let lines: [(MessageRole, String)] = [
             (.user, "帮我把这段话改得书面一点：这个方案我觉得还行，就是有点贵。"),
-            (.assistant, "可以这样改：「该方案整体可行，主要顾虑在于成本偏高。」"),
-            (.user, "再短一点"),
-            (.assistant, "「方案可行，唯成本偏高。」")
+            (.assistant, "可以这样改：\n\n**「该方案整体可行，主要顾虑在于成本偏高。」**\n\n如果要更克制一点，拆成两句：\n\n1. 方案整体可行\n2. 成本需要再压一压"),
+            (.user, "用 Swift 写个流式刷新的节流"),
+            (.assistant, "关键不是丢帧，是**合并**：\n\n```swift\nvar pending = \"\"\nvar lastFlush = Date.distantPast\n\nfunc push(_ token: String) {\n    pending += token\n    let now = Date()\n    if now.timeIntervalSince(lastFlush) >= 1.0 / 30.0 {\n        text += pending\n        pending = \"\"\n        lastFlush = now\n    }\n}\n```\n\n这样 200 token 的爆发会被压成约 6 次界面更新。")
         ]
         for (role, text) in lines {
             let message = Message(
