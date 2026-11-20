@@ -75,14 +75,14 @@ struct RootView: View {
                 currentSessionID: env.chat?.sessionID ?? UUID(),
                 onClose: { closeDrawer() }
             )
-            .frame(width: 320)
+            .frame(width: 312)
             .background(.regularMaterial)
             .clipShape(
                 UnevenRoundedRectangle(
                     topLeadingRadius: 0,
                     bottomLeadingRadius: 0,
-                    bottomTrailingRadius: 24,
-                    topTrailingRadius: 24,
+                    bottomTrailingRadius: 16,
+                    topTrailingRadius: 16,
                     style: .continuous
                 )
             )

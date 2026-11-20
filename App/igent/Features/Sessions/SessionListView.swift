@@ -39,12 +39,10 @@ struct SessionListView: View {
                 Button("完成") { close() }
                     .font(.subheadline)
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 18)
             // 抽屉跨满整屏，得自己避开状态栏/灵动岛。
-            .padding(.top, Self.topSafeInset + 10)
-            .padding(.bottom, 10)
-
-            Divider()
+            .padding(.top, Self.topSafeInset + 6)
+            .padding(.bottom, 12)
 
             listContent
         }
@@ -76,6 +74,7 @@ struct SessionListView: View {
                         }
                     } label: {
                         Label("新建对话", systemImage: "square.and.pencil")
+                            .font(.subheadline)
                     }
                 }
 
@@ -88,11 +87,13 @@ struct SessionListView: View {
                             }
                         } label: {
                             HStack {
-                                VStack(alignment: .leading, spacing: 3) {
+                                VStack(alignment: .leading, spacing: 2) {
                                     Text(session.title)
+                                        .font(.subheadline)
                                         .foregroundStyle(.primary)
+                                        .lineLimit(1)
                                     Text(session.updatedAt, format: .dateTime.month().day().hour().minute())
-                                        .font(.caption)
+                                        .font(.caption2)
                                         .foregroundStyle(.secondary)
                                 }
                                 Spacer()
@@ -113,6 +114,12 @@ struct SessionListView: View {
                     }
                 }
             }
+            .listStyle(.insetGrouped)
+            // 卡片之间露出抽屉的材质，才有"玻璃面板上的列表"的层次
+            .scrollContentBackground(.hidden)
+            .listSectionSpacing(.compact)
+            .contentMargins(.top, 6, for: .scrollContent)
+            .contentMargins(.bottom, 12, for: .scrollContent)
     }
 
     private func refresh() async {
