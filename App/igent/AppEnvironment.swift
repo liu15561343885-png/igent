@@ -51,6 +51,8 @@ final class AppEnvironment {
     var imageProviderRevision = 0
     /// 检索方式变化时自增，同上。
     var searchModeRevision = 0
+    /// 文档解析方式变化时自增，同上。
+    var documentPurposeRevision = 0
 
     /// 是否显示思维链、检索动作等中间过程。
     var showInternals: Bool {
@@ -457,7 +459,7 @@ extension AppEnvironment {
         guard WebSearchKind(rawValue: webSearchKind) == .deepseek else { return nil }
         let key = keychain.get(Keychain.account(for: "websearch")) ?? ""
         guard !key.isEmpty else { return nil }
-        return DeepSeekOCRRecognizer(apiKey: key)
+        return DeepSeekOCRRecognizer(apiKey: key, purpose: documentPurpose.recognizerPurpose)
     }
 
     func compactCurrentSession() async -> Int? {

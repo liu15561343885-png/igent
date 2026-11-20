@@ -259,8 +259,9 @@ struct ChatView: View {
             isBusy: model.isGeneratingImage,
             pendingImage: model.pendingImage,
             allowsImage: env.activeProfile?.capabilities.vision ?? false,
-            pendingDocumentName: model.pendingDocument?.name,
+            pendingDocuments: model.pendingDocuments,
             isParsingDocument: model.isParsingDocument,
+            parsingStatus: model.parsingStatus,
             allowsDocument: env.isDocumentParsingConfigured && !model.imageMode,
             webSearchEnabled: model.webSearchEnabled,
             webSearchAvailable: env.isWebSearchConfigured,
@@ -282,17 +283,19 @@ struct ChatView: View {
                 Task { await model.attach(data) }
             },
             onRemoveImage: { model.removePendingImage() },
-            onPickDocument: { url in
-                // 安全作用域资源（iCloud、其他 App 的容器）必须先开作用域才能读。
-                let scoped = url.startAccessingSecurityScopedResource()
-                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-                guard let data = try? Data(contentsOf: url) else {
-                    model.reportError("读取文件失败")
-                    return
+            onPickDocuments: { urls in
+                for url in urls {
+                    // 安全作用域资源（iCloud、其他 App 的容器）必须先开作用域才能读。
+                    let scoped = url.startAccessingSecurityScopedResource()
+                    defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                    guard let data = try? Data(contentsOf: url) else {
+                        model.reportError("读取「\(url.lastPathComponent)」失败")
+                        continue
+                    }
+                    model.attachDocument(name: url.lastPathComponent, data: data)
                 }
-                model.attachDocument(name: url.lastPathComponent, data: data)
             },
-            onRemoveDocument: { model.removeDocument() }
+            onRemoveDocument: { id in model.removeDocument(id: id) }
         )
     }
 

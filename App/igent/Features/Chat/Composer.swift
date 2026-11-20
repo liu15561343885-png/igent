@@ -14,8 +14,9 @@ struct Composer: View {
     var pendingImage: ImageAttachmentRef?
     var allowsImage: Bool
 
-    var pendingDocumentName: String?
+    var pendingDocuments: [ChatViewModel.PendingDocument]
     var isParsingDocument: Bool
+    var parsingStatus: String?
     var allowsDocument: Bool
 
     var webSearchEnabled: Bool
@@ -37,8 +38,8 @@ struct Composer: View {
     var onStop: () -> Void
     var onPickImage: (Data) -> Void
     var onRemoveImage: () -> Void
-    var onPickDocument: (URL) -> Void
-    var onRemoveDocument: () -> Void
+    var onPickDocuments: ([URL]) -> Void
+    var onRemoveDocument: (UUID) -> Void
 
     @FocusState private var isFocused: Bool
     @State private var pickerItem: PhotosPickerItem?
@@ -48,7 +49,7 @@ struct Composer: View {
     private var canSend: Bool {
         !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || pendingImage != nil
-            || pendingDocumentName != nil
+            || !pendingDocuments.isEmpty
     }
 
     private var placeholder: String {
@@ -73,31 +74,43 @@ struct Composer: View {
 
     @ViewBuilder
     private var documentPreview: some View {
-        if let pendingDocumentName {
-            HStack(spacing: 8) {
-                Image(systemName: "doc.text")
-                    .foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(pendingDocumentName)
-                        .font(.caption)
-                        .lineLimit(1)
-                    if isParsingDocument {
-                        Text("正在解析…")
-                            .font(.caption2)
+        if !pendingDocuments.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(pendingDocuments) { document in
+                    HStack(spacing: 8) {
+                        Image(systemName: document.attachment == nil ? "doc.text" : "doc.text.fill")
                             .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(document.name)
+                                .font(.caption)
+                                .lineLimit(1)
+                            if let attachment = document.attachment {
+                                Text("\(attachment.pageCount) 页 · \(attachment.text.count) 字")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer()
+                        if isParsingDocument {
+                            ProgressView().controlSize(.mini)
+                        } else {
+                            Button {
+                                onRemoveDocument(document.id)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .symbolRenderingMode(.palette)
+                                    .foregroundStyle(.white, .black.opacity(0.35))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("移除 \(document.name)")
+                        }
                     }
                 }
-                Spacer()
-                if !isParsingDocument {
-                    Button(action: onRemoveDocument) {
-                        Image(systemName: "xmark.circle.fill")
-                            .symbolRenderingMode(.palette)
-                            .foregroundStyle(.white, .black.opacity(0.35))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("移除文件")
-                } else {
-                    ProgressView().controlSize(.mini)
+
+                if let parsingStatus {
+                    Text(parsingStatus)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
             }
             .padding(.horizontal, 14)
@@ -289,10 +302,10 @@ struct Composer: View {
                 .fileImporter(
                     isPresented: $showFilePicker,
                     allowedContentTypes: [.pdf, .plainText, .rtf, .data],
-                    allowsMultipleSelection: false
+                    allowsMultipleSelection: true
                 ) { result in
-                    if case let .success(urls) = result, let url = urls.first {
-                        onPickDocument(url)
+                    if case let .success(urls) = result, !urls.isEmpty {
+                        onPickDocuments(urls)
                     }
                 }
             }

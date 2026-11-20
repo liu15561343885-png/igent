@@ -19,6 +19,7 @@ struct ProviderSettingsView: View {
                 modelSection
                 imageSection
                 webSearchSection
+                documentSection
                 compactionSection
                 displaySection
                 debugSection
@@ -218,6 +219,28 @@ struct ProviderSettingsView: View {
             Text("图片生成")
         } footer: {
             Text("与对话厂商分开配置：对话可以用 DeepSeek，画图用 OpenAI。OpenAI 填 gpt-image-1 或 dall-e-3；Gemini 填 gemini-2.5-flash-image，Base URL 填到 v1beta。")
+        }
+    }
+
+    @ViewBuilder
+    private var documentSection: some View {
+        Section {
+            Picker("解析方式", selection: Binding(
+                get: { env.documentPurpose },
+                set: { env.documentPurpose = $0 }
+            )) {
+                ForEach(DocumentParsingPurpose.allCases) { purpose in
+                    VStack(alignment: .leading) {
+                        Text(purpose.title)
+                        Text(purpose.detail).font(.caption2)
+                    }
+                    .tag(purpose)
+                }
+            }
+        } header: {
+            Text("文件解析")
+        } footer: {
+            Text("复用联网检索里的 DeepSeek Key。按页计费（$0.225 / 千页），单文件上限 100 MiB、1000 页。改这里会影响下一次解析。")
         }
     }
 

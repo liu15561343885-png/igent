@@ -42,10 +42,10 @@ final class ChatViewModel {
     /// 待发送的图片（已归一化并落盘）。
     private(set) var pendingImage: ImageAttachmentRef?
     /// 待随下一条消息发送的文档。解析安排在发送时，选文件时不占网络。
-    private(set) var pendingDocument: PendingDocument?
+    private(set) var pendingDocuments: [PendingDocument] = []
     private(set) var isParsingDocument = false
-    /// 正在解析的文件名，供输入条显示进度。
-    private(set) var pendingDocumentName: String?
+    /// 解析进度文案，供输入条显示。
+    private(set) var parsingStatus: String?
 
     private let store: SessionStore
     private let orchestrator: TurnOrchestrator
@@ -132,21 +132,21 @@ final class ChatViewModel {
     ) {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let image = pendingImage
-        let document = pendingDocument
-        guard !text.isEmpty || image != nil || document != nil, !isStreaming, !isParsingDocument else {
+        let documents = pendingDocuments
+        guard !text.isEmpty || image != nil || !documents.isEmpty, !isStreaming, !isParsingDocument else {
             return
         }
 
         draft = ""
         pendingImage = nil
-        pendingDocument = nil
+        pendingDocuments = []
         lastError = nil
 
-        guard let document else {
+        guard !documents.isEmpty else {
             startTurn(
                 text: text,
                 image: image,
-                document: nil,
+                documents: [],
                 configuration: configuration,
                 webSearch: webSearch,
                 webFetch: webFetch,
@@ -165,38 +165,49 @@ final class ChatViewModel {
         // 解析要花几秒到几十秒（扫描件更久），先把界面切到「解析中」，
         // 而不是让发送按钮看起来没反应。
         isParsingDocument = true
-        let pendingName = document.name
         streamTask = Task { [weak self] in
             guard let self else { return }
-            self.pendingDocumentName = pendingName
-            do {
-                let recognized = try await recognizer.recognize(
-                    data: document.data,
-                    filename: document.name
-                )
-                self.isParsingDocument = false
-                self.pendingDocumentName = nil
-                self.startTurn(
-                    text: text,
-                    image: image,
-                    document: DocumentAttachment(
-                        name: document.name,
+            var queue = documents
+
+            for index in queue.indices where queue[index].attachment == nil {
+                self.parsingStatus = queue.count > 1
+                    ? "正在解析 \(index + 1)/\(queue.count)…"
+                    : "正在解析…"
+                do {
+                    let recognized = try await recognizer.recognize(
+                        data: queue[index].data,
+                        filename: queue[index].name
+                    )
+                    queue[index].attachment = DocumentAttachment(
+                        name: queue[index].name,
                         pageCount: recognized.pageCount,
                         text: recognized.text,
                         truncated: recognized.isTruncated
-                    ),
-                    configuration: configuration,
-                    webSearch: webSearch,
-                    webFetch: webFetch,
-                    research: research,
-                    skills: skills,
-                    serverTools: serverTools
-                )
-            } catch {
-                self.lastError = "文档解析失败：\(error)"
-                self.isParsingDocument = false
-                self.pendingDocumentName = nil
+                    )
+                } catch {
+                    // 失败就整体中止，但把已解析的结果留在待发送列表里，
+                    // 重试时不会重复解析、重复计费。
+                    self.lastError = "「\(queue[index].name)」解析失败：\(error)"
+                    self.pendingDocuments = queue
+                    self.isParsingDocument = false
+                    self.parsingStatus = nil
+                    return
+                }
             }
+
+            self.isParsingDocument = false
+            self.parsingStatus = nil
+            self.startTurn(
+                text: text,
+                image: image,
+                documents: queue.compactMap(\.attachment),
+                configuration: configuration,
+                webSearch: webSearch,
+                webFetch: webFetch,
+                research: research,
+                skills: skills,
+                serverTools: serverTools
+            )
         }
     }
 
@@ -204,7 +215,7 @@ final class ChatViewModel {
     private func startTurn(
         text: String,
         image: ImageAttachmentRef?,
-        document: DocumentAttachment?,
+        documents: [DocumentAttachment],
         configuration: TurnOrchestrator.Configuration,
         webSearch: (any WebSearchProvider)?,
         webFetch: (any WebFetchProvider)?,
@@ -223,13 +234,13 @@ final class ChatViewModel {
         // 顺序：图片 → 文档 → 文字。模型先看材料，再读指令。
         var blocks: [ContentBlock] = []
         if let image { blocks.append(.image(image)) }
-        if let document { blocks.append(.document(document)) }
+        blocks.append(contentsOf: documents.map { .document($0) })
         if !text.isEmpty { blocks.append(.text(text)) }
 
         // 立刻把用户消息显示出来，不等落库往返。
         messages.append(Message(role: .user, blocks: blocks, source: .user))
 
-        let query = text.isEmpty ? (document?.name ?? "图片") : text
+        let query = text.isEmpty ? (documents.first?.name ?? "图片") : text
         let useSearch = webSearchEnabled && (webSearch != nil || research != nil)
 
         // skill 是"指令"，注入 system 最合适：四族的 system 落点由 systemStyle 统一处理，
@@ -309,19 +320,26 @@ final class ChatViewModel {
     }
 
     /// 取走输入框内容并清空（图片模式需要先拿到提示词）。
-    struct PendingDocument: Sendable, Equatable {
+    struct PendingDocument: Sendable, Equatable, Identifiable {
+        var id = UUID()
         var name: String
         var data: Data
+        /// 解析结果。多文件时其中一个失败，已解析好的不会被丢弃、也不会重复计费。
+        var attachment: DocumentAttachment?
     }
 
     /// 选文件后先记在内存里，发送时才解析——避免选完就干等几十秒。
     func attachDocument(name: String, data: Data) {
-        pendingDocument = PendingDocument(name: name, data: data)
+        pendingDocuments.append(PendingDocument(name: name, data: data))
         lastError = nil
     }
 
-    func removeDocument() {
-        pendingDocument = nil
+    func removeDocument(id: UUID) {
+        pendingDocuments.removeAll { $0.id == id }
+    }
+
+    func removeAllDocuments() {
+        pendingDocuments.removeAll()
     }
 
     func takeDraft() -> String {
