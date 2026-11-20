@@ -28,6 +28,67 @@ public struct WebContextBuilder: Sendable {
         public var failedFetches: Int
     }
 
+    /// 多条检索式：并发执行后合并成一条证据，来源按 URL 去重。
+    ///
+    /// 为什么合并而不是各发各的：一次对话请求只能携带有限上下文，
+    /// 分成多个 context 块会让模型看到割裂的资料。
+    public func build(
+        queries: [String],
+        search: any WebSearchProvider,
+        fetcher: any WebFetchProvider
+    ) async -> Outcome {
+        let unique = queries
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .reduce(into: [String]()) { result, query in
+                if !result.contains(query) { result.append(query) }
+            }
+
+        guard unique.count > 1 else {
+            return await build(
+                query: unique.first ?? "",
+                search: search,
+                fetcher: fetcher
+            )
+        }
+
+        var outcomes: [Outcome] = []
+        await withTaskGroup(of: (Int, Outcome).self) { group in
+            for (index, query) in unique.enumerated() {
+                group.addTask {
+                    (index, await self.build(query: query, search: search, fetcher: fetcher))
+                }
+            }
+            var collected: [(Int, Outcome)] = []
+            for await item in group { collected.append(item) }
+            outcomes = collected.sorted { $0.0 < $1.0 }.map(\.1)
+        }
+
+        var seen = Set<String>()
+        var sources: [WebSource] = []
+        for outcome in outcomes {
+            for source in outcome.evidence.sources where seen.insert(source.url.absoluteString).inserted {
+                sources.append(source)
+            }
+        }
+
+        let digest = outcomes
+            .map(\.evidence.digest)
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n\n")
+
+        return Outcome(
+            evidence: ContextEvidence(
+                query: unique.joined(separator: " / "),
+                sources: sources,
+                digest: digest,
+                fetchedAt: Date(),
+                truncated: outcomes.contains { $0.evidence.truncated }
+            ),
+            failedFetches: outcomes.reduce(0) { $0 + $1.failedFetches }
+        )
+    }
+
     public func build(
         query: String,
         search: any WebSearchProvider,

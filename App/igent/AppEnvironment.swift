@@ -22,6 +22,7 @@ final class AppEnvironment {
     let skillRegistry: SkillRegistry
     let compaction: CompactionService
     let titles: TitleService
+    let planner: SearchPlanner
     /// 已加载 skill 的同步快照，供发送时拼 system。
     var skillDefinitions: [String: SkillDefinition] = [:]
     var skillSummaries: [SkillSummary] = []
@@ -85,6 +86,7 @@ final class AppEnvironment {
         // 依赖 store 的服务必须在 store 赋值之后构造。
         compaction = CompactionService(store: store, runtime: runtime)
         titles = TitleService(store: store, runtime: runtime)
+        planner = SearchPlanner(runtime: runtime)
 
         autoCompactionEnabled = UserDefaults.standard.object(forKey: "autoCompaction") as? Bool ?? true
         activeProfileID = UserDefaults.standard.string(forKey: "activeProfileID")
@@ -222,7 +224,8 @@ final class AppEnvironment {
             sessionID: session.id,
             store: store,
             orchestrator: orchestrator,
-            attachments: attachments
+            attachments: attachments,
+            planner: planner
         )
         await model.load()
         chat = model

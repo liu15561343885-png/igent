@@ -109,6 +109,18 @@ struct ChatView: View {
     /// 最近一轮的用量与估算成本。成本算不出来时只显示 token。
     @ViewBuilder
     private var usageBar: some View {
+        if model.searchSkipped {
+            HStack(spacing: 6) {
+                Image(systemName: "globe")
+                Text("模型判断本轮不需要联网")
+                Spacer()
+            }
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 2)
+        }
+
         if let usage = model.lastTurnUsage {
             HStack(spacing: 6) {
                 Text("本轮 ↑\(usage.billedInputTokens) ↓\(usage.outputTokens)")

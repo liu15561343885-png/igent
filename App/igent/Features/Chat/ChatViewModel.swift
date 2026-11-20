@@ -27,6 +27,8 @@ final class ChatViewModel {
     /// 本轮是否先联网检索。
     var webSearchEnabled = false
     private(set) var isSearching = false
+    /// 模型判断本轮不需要检索。
+    private(set) var searchSkipped = false
     /// 手动指定的 skill（下一轮生效，发完即清）。
     var pendingSkill: SkillDefinition?
     /// 图片生成模式：输入框的下一句被当作绘图提示词。
@@ -38,6 +40,7 @@ final class ChatViewModel {
     private let store: SessionStore
     private let orchestrator: TurnOrchestrator
     private let attachments: AttachmentStore
+    private let planner: SearchPlanner
     private var streamTask: Task<Void, Never>?
 
     /// 流式刷新节流：约 30fps，避免每 token 重建整个列表。
@@ -50,12 +53,14 @@ final class ChatViewModel {
         sessionID: SessionID,
         store: SessionStore,
         orchestrator: TurnOrchestrator,
-        attachments: AttachmentStore
+        attachments: AttachmentStore,
+        planner: SearchPlanner
     ) {
         self.sessionID = sessionID
         self.store = store
         self.orchestrator = orchestrator
         self.attachments = attachments
+        self.planner = planner
     }
 
     /// 接收用户从相册选的原始数据：归一化（EXIF 转正、限长边、转 JPEG）后落盘。
@@ -107,6 +112,7 @@ final class ChatViewModel {
         lastError = nil
         isStreaming = true
         isThinking = true
+        searchSkipped = false
         streamingText = ""
         pending = ""
         lastFlush = .distantPast
@@ -133,13 +139,27 @@ final class ChatViewModel {
             // UI 上的用户气泡仍然只有文字/图片（context 不显示）。
             if useSearch, let provider = webSearch {
                 self.isSearching = true
-                let outcome = await WebContextBuilder().build(
-                    query: query,
-                    search: provider,
-                    fetcher: webFetch ?? HTTPFetcher()
+
+                // 先让模型判断「要不要搜、搜什么」，再执行。
+                // 失败就退回用户原话——检索能力不能因为规划挂了而失效。
+                let plan = await self.planner.plan(
+                    question: query,
+                    provider: configuration.provider,
+                    model: configuration.model
                 )
+                let queries = plan.map(\.queries) ?? [query]
+
+                if queries.isEmpty {
+                    self.searchSkipped = true
+                } else {
+                    let outcome = await WebContextBuilder().build(
+                        queries: queries,
+                        search: provider,
+                        fetcher: webFetch ?? HTTPFetcher()
+                    )
+                    outgoing.append(.context(outcome.evidence))
+                }
                 self.isSearching = false
-                outgoing.append(.context(outcome.evidence))
             }
 
             let stream = await self.orchestrator.send(
