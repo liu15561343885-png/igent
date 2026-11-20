@@ -99,6 +99,12 @@ public struct OpenAIRequestBuilder: Sendable {
                     "type": .string("text"),
                     "text": .string(render(evidence))
                 ]))
+            case let .document(document):
+                hasRichContent = true
+                parts.append(.object([
+                    "type": .string("text"),
+                    "text": .string(document.promptText)
+                ]))
             case .citation:
                 continue
             case .providerBlock:

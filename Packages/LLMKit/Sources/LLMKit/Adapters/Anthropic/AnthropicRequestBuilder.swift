@@ -125,6 +125,11 @@ public struct AnthropicRequestBuilder: Sendable {
                 // 原样回传：DeepSeek 把网页正文加密在 signature 里，
                 // 改动或丢弃都会让"上一轮读过的那一页"从上下文里消失。
                 blocks.append(block.payload)
+            case let .document(document):
+                blocks.append(.object([
+                    "type": .string("text"),
+                    "text": .string(document.promptText)
+                ]))
             case .reasoning, .citation:
                 continue
             }

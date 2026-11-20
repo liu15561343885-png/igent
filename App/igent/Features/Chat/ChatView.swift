@@ -259,6 +259,9 @@ struct ChatView: View {
             isBusy: model.isGeneratingImage,
             pendingImage: model.pendingImage,
             allowsImage: env.activeProfile?.capabilities.vision ?? false,
+            pendingDocumentName: model.pendingDocument?.name,
+            isParsingDocument: model.isParsingDocument,
+            allowsDocument: env.isDocumentParsingConfigured && !model.imageMode,
             webSearchEnabled: model.webSearchEnabled,
             webSearchAvailable: env.isWebSearchConfigured,
             isSearching: model.isSearching,
@@ -278,7 +281,18 @@ struct ChatView: View {
             onPickImage: { data in
                 Task { await model.attach(data) }
             },
-            onRemoveImage: { model.removePendingImage() }
+            onRemoveImage: { model.removePendingImage() },
+            onPickDocument: { url in
+                // 安全作用域资源（iCloud、其他 App 的容器）必须先开作用域才能读。
+                let scoped = url.startAccessingSecurityScopedResource()
+                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                guard let data = try? Data(contentsOf: url) else {
+                    model.reportError("读取文件失败")
+                    return
+                }
+                model.attachDocument(name: url.lastPathComponent, data: data)
+            },
+            onRemoveDocument: { model.removeDocument() }
         )
     }
 
@@ -414,7 +428,8 @@ struct ChatView: View {
             webFetch: useAppSearch ? env.makeWebFetchProvider() : nil,
             research: research,
             skills: skills,
-            serverTools: serverTools
+            serverTools: serverTools,
+            recognizer: env.makeDocumentRecognizer()
         )
     }
 

@@ -81,6 +81,12 @@ struct MessageBubble: View {
         }
     }
 
+    private var documents: [DocumentAttachment] {
+        message.blocks.compactMap { block -> DocumentAttachment? in
+            if case let .document(value) = block { value } else { nil }
+        }
+    }
+
     private var citations: [Citation] {
         message.blocks.compactMap { block -> Citation? in
             if case let .citation(value) = block { value } else { nil }
@@ -115,6 +121,27 @@ struct MessageBubble: View {
                     ForEach(images, id: \.id) { ref in
                         AttachmentThumbnail(reference: ref)
                     }
+                }
+
+                ForEach(Array(documents.enumerated()), id: \.offset) { _, document in
+                    HStack(spacing: 8) {
+                        Image(systemName: "doc.text.fill")
+                            .foregroundStyle(isUser ? Color.white.opacity(0.9) : Color.secondary)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(document.name)
+                                .font(.caption)
+                                .lineLimit(1)
+                            Text("\(document.pageCount) 页 · \(document.text.count) 字\(document.truncated ? " · 部分未解析" : "")")
+                                .font(.caption2)
+                                .foregroundStyle(isUser ? Color.white.opacity(0.75) : Color.secondary)
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(isUser ? Color.white.opacity(0.16) : Color.primary.opacity(0.06))
+                    )
                 }
 
                 if env.showInternals, !providerRows.isEmpty || !contextRows.isEmpty {

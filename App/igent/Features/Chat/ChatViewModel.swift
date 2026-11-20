@@ -41,11 +41,18 @@ final class ChatViewModel {
     private(set) var isGeneratingImage = false
     /// 待发送的图片（已归一化并落盘）。
     private(set) var pendingImage: ImageAttachmentRef?
+    /// 待随下一条消息发送的文档。解析安排在发送时，选文件时不占网络。
+    private(set) var pendingDocument: PendingDocument?
+    private(set) var isParsingDocument = false
+    /// 正在解析的文件名，供输入条显示进度。
+    private(set) var pendingDocumentName: String?
 
     private let store: SessionStore
     private let orchestrator: TurnOrchestrator
     private let attachments: AttachmentStore
     private let planner: SearchPlanner
+    /// 文档解析器。为 nil 表示没配 DeepSeek Key，附件入口应禁用。
+    var documentRecognizer: (any DocumentRecognizer)?
     private var streamTask: Task<Void, Never>?
 
     /// 流式刷新节流：约 30fps，避免每 token 重建整个列表。
@@ -120,20 +127,91 @@ final class ChatViewModel {
         webFetch: (any WebFetchProvider)? = nil,
         research: WebResearch? = nil,
         skills: [SkillDefinition] = [],
-        serverTools: [ServerToolRequest] = []
+        serverTools: [ServerToolRequest] = [],
+        recognizer: (any DocumentRecognizer)? = nil
     ) {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let image = pendingImage
-        guard !text.isEmpty || image != nil, !isStreaming else { return }
-
-        // 图片放在文字前面：视觉模型通常先看图再读指令。
-        var blocks: [ContentBlock] = []
-        if let image { blocks.append(.image(image)) }
-        if !text.isEmpty { blocks.append(.text(text)) }
+        let document = pendingDocument
+        guard !text.isEmpty || image != nil || document != nil, !isStreaming, !isParsingDocument else {
+            return
+        }
 
         draft = ""
         pendingImage = nil
+        pendingDocument = nil
         lastError = nil
+
+        guard let document else {
+            startTurn(
+                text: text,
+                image: image,
+                document: nil,
+                configuration: configuration,
+                webSearch: webSearch,
+                webFetch: webFetch,
+                research: research,
+                skills: skills,
+                serverTools: serverTools
+            )
+            return
+        }
+
+        guard let recognizer else {
+            lastError = "没有配置文档解析所需的 DeepSeek Key"
+            return
+        }
+
+        // 解析要花几秒到几十秒（扫描件更久），先把界面切到「解析中」，
+        // 而不是让发送按钮看起来没反应。
+        isParsingDocument = true
+        let pendingName = document.name
+        streamTask = Task { [weak self] in
+            guard let self else { return }
+            self.pendingDocumentName = pendingName
+            do {
+                let recognized = try await recognizer.recognize(
+                    data: document.data,
+                    filename: document.name
+                )
+                self.isParsingDocument = false
+                self.pendingDocumentName = nil
+                self.startTurn(
+                    text: text,
+                    image: image,
+                    document: DocumentAttachment(
+                        name: document.name,
+                        pageCount: recognized.pageCount,
+                        text: recognized.text,
+                        truncated: recognized.isTruncated
+                    ),
+                    configuration: configuration,
+                    webSearch: webSearch,
+                    webFetch: webFetch,
+                    research: research,
+                    skills: skills,
+                    serverTools: serverTools
+                )
+            } catch {
+                self.lastError = "文档解析失败：\(error)"
+                self.isParsingDocument = false
+                self.pendingDocumentName = nil
+            }
+        }
+    }
+
+    /// 真正发起一轮对话。文档解析完成后再调用，保证进来的只有已就绪的块。
+    private func startTurn(
+        text: String,
+        image: ImageAttachmentRef?,
+        document: DocumentAttachment?,
+        configuration: TurnOrchestrator.Configuration,
+        webSearch: (any WebSearchProvider)?,
+        webFetch: (any WebFetchProvider)?,
+        research: WebResearch?,
+        skills: [SkillDefinition],
+        serverTools: [ServerToolRequest]
+    ) {
         isStreaming = true
         isThinking = true
         searchSkipped = false
@@ -142,11 +220,17 @@ final class ChatViewModel {
         pending = ""
         lastFlush = .distantPast
 
+        // 顺序：图片 → 文档 → 文字。模型先看材料，再读指令。
+        var blocks: [ContentBlock] = []
+        if let image { blocks.append(.image(image)) }
+        if let document { blocks.append(.document(document)) }
+        if !text.isEmpty { blocks.append(.text(text)) }
+
         // 立刻把用户消息显示出来，不等落库往返。
         messages.append(Message(role: .user, blocks: blocks, source: .user))
 
-        let query = text.isEmpty ? "图片" : text
-        let useSearch = webSearchEnabled && webSearch != nil
+        let query = text.isEmpty ? (document?.name ?? "图片") : text
+        let useSearch = webSearchEnabled && (webSearch != nil || research != nil)
 
         // skill 是"指令"，注入 system 最合适：四族的 system 落点由 systemStyle 统一处理，
         // 不必为此新增内容块类型。代价是每轮 system 变化，前缀缓存会失效。
@@ -161,8 +245,8 @@ final class ChatViewModel {
             var outgoing = blocks
 
             // 先检索再问模型：证据作为 context 块随本轮一起发出，
-            // UI 上的用户气泡仍然只有文字/图片（context 不显示）。
-            if useSearch, webSearch != nil || research != nil {
+            // UI 上的用户气泡仍然只有文字/图片/文档。
+            if useSearch {
                 self.isSearching = true
 
                 // 先让模型判断「要不要搜、搜什么」，再执行。
@@ -225,6 +309,21 @@ final class ChatViewModel {
     }
 
     /// 取走输入框内容并清空（图片模式需要先拿到提示词）。
+    struct PendingDocument: Sendable, Equatable {
+        var name: String
+        var data: Data
+    }
+
+    /// 选文件后先记在内存里，发送时才解析——避免选完就干等几十秒。
+    func attachDocument(name: String, data: Data) {
+        pendingDocument = PendingDocument(name: name, data: data)
+        lastError = nil
+    }
+
+    func removeDocument() {
+        pendingDocument = nil
+    }
+
     func takeDraft() -> String {
         let value = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         draft = ""

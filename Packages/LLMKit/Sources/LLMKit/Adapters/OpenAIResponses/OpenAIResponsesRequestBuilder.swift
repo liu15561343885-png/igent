@@ -78,6 +78,11 @@ public struct OpenAIResponsesRequestBuilder: Sendable {
                     "type": .string("input_text"),
                     "text": .string(ContextRendering.render(evidence))
                 ]))
+            case let .document(document):
+                parts.append(.object([
+                    "type": .string("input_text"),
+                    "text": .string(document.promptText)
+                ]))
             case .reasoning, .citation:
                 continue
             case .providerBlock:

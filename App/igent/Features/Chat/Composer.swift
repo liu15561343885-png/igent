@@ -14,6 +14,10 @@ struct Composer: View {
     var pendingImage: ImageAttachmentRef?
     var allowsImage: Bool
 
+    var pendingDocumentName: String?
+    var isParsingDocument: Bool
+    var allowsDocument: Bool
+
     var webSearchEnabled: Bool
     var webSearchAvailable: Bool
     var isSearching: Bool
@@ -33,13 +37,18 @@ struct Composer: View {
     var onStop: () -> Void
     var onPickImage: (Data) -> Void
     var onRemoveImage: () -> Void
+    var onPickDocument: (URL) -> Void
+    var onRemoveDocument: () -> Void
 
     @FocusState private var isFocused: Bool
     @State private var pickerItem: PhotosPickerItem?
     @State private var showSkillPopover = false
+    @State private var showFilePicker = false
 
     private var canSend: Bool {
-        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || pendingImage != nil
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || pendingImage != nil
+            || pendingDocumentName != nil
     }
 
     private var placeholder: String {
@@ -49,6 +58,7 @@ struct Composer: View {
     var body: some View {
         VStack(spacing: 8) {
             attachmentPreview
+            documentPreview
             skillChip
             searchStatus
 
@@ -60,6 +70,39 @@ struct Composer: View {
     }
 
     // MARK: - 上方状态区
+
+    @ViewBuilder
+    private var documentPreview: some View {
+        if let pendingDocumentName {
+            HStack(spacing: 8) {
+                Image(systemName: "doc.text")
+                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(pendingDocumentName)
+                        .font(.caption)
+                        .lineLimit(1)
+                    if isParsingDocument {
+                        Text("正在解析…")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                if !isParsingDocument {
+                    Button(action: onRemoveDocument) {
+                        Image(systemName: "xmark.circle.fill")
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(.white, .black.opacity(0.35))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("移除文件")
+                } else {
+                    ProgressView().controlSize(.mini)
+                }
+            }
+            .padding(.horizontal, 14)
+        }
+    }
 
     @ViewBuilder
     private var attachmentPreview: some View {
@@ -232,6 +275,27 @@ struct Composer: View {
             }
 
             Spacer()
+
+            if allowsDocument && !isStreaming && !imageMode {
+                Button {
+                    showFilePicker = true
+                } label: {
+                    Image(systemName: "paperclip")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("添加文件")
+                .fileImporter(
+                    isPresented: $showFilePicker,
+                    allowedContentTypes: [.pdf, .plainText, .rtf, .data],
+                    allowsMultipleSelection: false
+                ) { result in
+                    if case let .success(urls) = result, let url = urls.first {
+                        onPickDocument(url)
+                    }
+                }
+            }
 
             if allowsImage && !isStreaming && !imageMode {
                 PhotosPicker(selection: $pickerItem, matching: .images, photoLibrary: .shared()) {

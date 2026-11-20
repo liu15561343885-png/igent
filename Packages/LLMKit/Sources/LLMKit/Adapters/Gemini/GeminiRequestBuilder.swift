@@ -79,6 +79,8 @@ public struct GeminiRequestBuilder: Sendable {
                 }
             case let .context(evidence):
                 parts.append(.object(["text": .string(ContextRendering.render(evidence))]))
+            case let .document(document):
+                parts.append(.object(["text": .string(document.promptText)]))
             case .reasoning, .citation:
                 // 思维链不回灌：Gemini 的 thought 部分带签名，自行拼接会破坏校验。
                 continue

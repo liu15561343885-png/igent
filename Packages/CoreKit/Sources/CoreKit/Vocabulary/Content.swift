@@ -9,6 +9,8 @@ public enum BlockType: String, Codable, Sendable, CaseIterable {
     case image
     case context
     case citation
+    /// 用户上传并解析过的文档。
+    case document
     /// 厂商私有的不透明块（如 DeepSeek 的 `server_tool_use`）。
     /// 必须**原样回传**给厂商，否则多轮之后读过或搜过的内容会从上下文里消失。
     case provider
@@ -95,6 +97,42 @@ public struct Citation: Codable, Sendable, Equatable {
     }
 }
 
+/// 已解析的文档。正文在解析时抽取好，请求里作为普通文本发给模型——
+/// 这样任何厂商都能读，不依赖各家互不兼容的文件接口。
+public struct DocumentAttachment: Codable, Sendable, Equatable {
+    public var name: String
+    public var pageCount: Int
+    /// 解析出的纯文本（各页按顺序拼接）。
+    public var text: String
+    /// 原文是否因长度上限被截断。
+    public var truncated: Bool
+
+    public init(name: String, pageCount: Int, text: String, truncated: Bool = false) {
+        self.name = name
+        self.pageCount = pageCount
+        self.text = text
+        self.truncated = truncated
+    }
+
+    /// 单个文档注入上下文的上限。超过这个量，模型也读不完，
+    /// 不如明确截断并告知，而不是让请求直接超窗。
+    static let promptLimit = 24_000
+
+    /// 发给模型的形式：文件头 + 正文。
+    public var promptText: String {
+        let header = "【文件：\(name)（\(pageCount) 页）】"
+        var body = text
+        var note = ""
+        if body.count > Self.promptLimit {
+            body = String(body.prefix(Self.promptLimit))
+            note = "\n…（文件较长，后续内容已截断）"
+        } else if truncated {
+            note = "\n…（原文超出识别长度上限，部分内容未解析）"
+        }
+        return header + "\n" + body + note
+    }
+}
+
 /// 厂商私有的不透明块。
 ///
 /// 我们不解析它的语义，只保证两件事：原样存进事件日志、原样拼回下一次请求。
@@ -119,6 +157,7 @@ public enum ContentBlock: Codable, Sendable, Equatable {
     case image(ImageAttachmentRef)
     case context(ContextEvidence)
     case citation(Citation)
+    case document(DocumentAttachment)
     case providerBlock(ProviderBlock)
 
     public var type: BlockType {
@@ -128,6 +167,7 @@ public enum ContentBlock: Codable, Sendable, Equatable {
         case .image: .image
         case .context: .context
         case .citation: .citation
+        case .document: .document
         case .providerBlock: .provider
         }
     }
@@ -139,6 +179,8 @@ public enum ContentBlock: Codable, Sendable, Equatable {
             value
         case let .context(evidence):
             evidence.digest
+        case let .document(document):
+            document.text
         case .image, .citation, .providerBlock:
             ""
         }

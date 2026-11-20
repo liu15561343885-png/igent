@@ -43,6 +43,8 @@ public enum TokenEstimator {
                 total += 800
             case .citation:
                 total += 8
+            case let .document(document):
+                total += estimate(document.promptText)
             case let .providerBlock(block):
                 // 这些块的正文是密文或结构化 JSON，按体积粗估即可。
                 total += max(8, roughSize(block.payload) / 4)

@@ -255,6 +255,30 @@ final class AppEnvironment {
             surfaceOp: .append
         )
 
+        let docAsk = Message(
+            role: .user,
+            blocks: [
+                .document(DocumentAttachment(
+                    name: "季度报告.pdf",
+                    pageCount: 3,
+                    text: "本季度营收同比增长 18%，主要来自海外市场。"
+                )),
+                .text("这份文件讲了什么？")
+            ],
+            source: .user
+        )
+        let docAnswer = Message(
+            role: .assistant,
+            blocks: [.text("这季度营收同比涨了 18%，增量主要来自海外市场。")],
+            source: .model(provider: "demo", model: "gpt-4o-mini", meta: nil)
+        )
+        try? await store.append(.userMessage(docAsk), to: session.id, surfaceOp: .append)
+        try? await store.append(
+            .assistantMessage(docAnswer, usage: nil, interrupted: false),
+            to: session.id,
+            surfaceOp: .append
+        )
+
         try? await store.logUsage(
             sessionID: session.id,
             turn: 1,
@@ -426,6 +450,16 @@ struct SessionStats: Sendable {
 
 extension AppEnvironment {
     /// 压缩较早的历史。返回被压掉的消息数，nil 表示不值得压。
+    /// 文档解析复用 DeepSeek 的 Key：OCR 是 DeepSeek 的工具接口，按页计费。
+    var isDocumentParsingConfigured: Bool { makeDocumentRecognizer() != nil }
+
+    func makeDocumentRecognizer() -> (any DocumentRecognizer)? {
+        guard WebSearchKind(rawValue: webSearchKind) == .deepseek else { return nil }
+        let key = keychain.get(Keychain.account(for: "websearch")) ?? ""
+        guard !key.isEmpty else { return nil }
+        return DeepSeekOCRRecognizer(apiKey: key)
+    }
+
     func compactCurrentSession() async -> Int? {
         guard let chat = chat, let profile = activeProfile else { return nil }
         // 手动压缩按固定条数保留，行为可预测；自动压缩才按 token 预算。
