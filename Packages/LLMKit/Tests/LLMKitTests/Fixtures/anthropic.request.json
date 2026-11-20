@@ -1,0 +1,18 @@
+{
+  "model": "claude-sonnet-4-5",
+  "max_tokens": 4096,
+  "stream": true,
+  "system": "你是助手",
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "你好"
+        }
+      ]
+    }
+  ],
+  "temperature": 0.7
+}

@@ -31,6 +31,8 @@ public struct GenerateOptions: Sendable {
     public var stop: [String]?
     public var reasoning: ReasoningEffort?
     public var purpose: CallPurpose?
+    /// 是否流式请求。P0 只实现流式；非流式留作后续。
+    public var stream: Bool
     /// 厂商私有参数逃生口，原样合并进请求体。
     public var extras: [String: JSONValue]
 
@@ -44,6 +46,7 @@ public struct GenerateOptions: Sendable {
         stop: [String]? = nil,
         reasoning: ReasoningEffort? = nil,
         purpose: CallPurpose? = nil,
+        stream: Bool = true,
         extras: [String: JSONValue] = [:]
     ) {
         self.provider = provider
@@ -55,6 +58,7 @@ public struct GenerateOptions: Sendable {
         self.stop = stop
         self.reasoning = reasoning
         self.purpose = purpose
+        self.stream = stream
         self.extras = extras
     }
 }

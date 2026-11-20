@@ -7,7 +7,7 @@
 """
 from pathlib import Path
 
-IDS = {n: f"AA{n:022d}" for n in range(1, 18)}
+IDS = {n: f"AA{n:022d}" for n in range(1, 20)}
 for n, v in IDS.items():
     assert len(v) == 24, (n, v, len(v))
 
@@ -176,6 +176,7 @@ pbxproj = f"""// !$*UTF8*$!
 			name = igent;
 			packageProductDependencies = (
 				{i(17)} /* CoreKit */,
+				{i(19)} /* LLMKit */,
 			);
 			productName = igent;
 			productReference = {i(5)} /* igent.app */;
@@ -207,6 +208,7 @@ pbxproj = f"""// !$*UTF8*$!
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				{i(16)} /* XCLocalSwiftPackageReference "Packages/CoreKit" */,
+				{i(18)} /* XCLocalSwiftPackageReference "Packages/LLMKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = {i(3)} /* Products */;
@@ -287,6 +289,10 @@ pbxproj = f"""// !$*UTF8*$!
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/CoreKit;
 		}};
+		{i(18)} /* XCLocalSwiftPackageReference "Packages/LLMKit" */ = {{
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/LLMKit;
+		}};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -294,6 +300,11 @@ pbxproj = f"""// !$*UTF8*$!
 			isa = XCSwiftPackageProductDependency;
 			package = {i(16)} /* XCLocalSwiftPackageReference "Packages/CoreKit" */;
 			productName = CoreKit;
+		}};
+		{i(19)} /* LLMKit */ = {{
+			isa = XCSwiftPackageProductDependency;
+			package = {i(18)} /* XCLocalSwiftPackageReference "Packages/LLMKit" */;
+			productName = LLMKit;
 		}};
 /* End XCSwiftPackageProductDependency section */
 	}};

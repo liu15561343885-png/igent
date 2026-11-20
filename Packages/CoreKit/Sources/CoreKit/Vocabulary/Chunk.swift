@@ -8,7 +8,7 @@ import Foundation
 /// 3. 已被 `blockEnd` 关闭的 index 再收到 delta → 丢弃。
 /// 4. `usage` 至多一次，且必须在 `finish` 之前；`finish` 恰一次且为终态。
 /// 5. 适配器私有元数据走 `finish` 的 `meta`，不进内容块。
-/// 6. 载体无关：SSE 与 NDJSON 都归一到这里。
+/// 6. 载体无关：各家 SSE 帧格式不同，都归一到这里。
 public enum StreamChunk: Sendable, Equatable {
     case blockStart(index: Int, type: BlockType)
     case textDelta(index: Int, text: String)

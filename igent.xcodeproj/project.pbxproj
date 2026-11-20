@@ -66,6 +66,7 @@
 			name = igent;
 			packageProductDependencies = (
 				AA0000000000000000000017 /* CoreKit */,
+				AA0000000000000000000019 /* LLMKit */,
 			);
 			productName = igent;
 			productReference = AA0000000000000000000005 /* igent.app */;
@@ -97,6 +98,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				AA0000000000000000000016 /* XCLocalSwiftPackageReference "Packages/CoreKit" */,
+				AA0000000000000000000018 /* XCLocalSwiftPackageReference "Packages/LLMKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = AA0000000000000000000003 /* Products */;
@@ -259,6 +261,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/CoreKit;
 		};
+		AA0000000000000000000018 /* XCLocalSwiftPackageReference "Packages/LLMKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/LLMKit;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -266,6 +272,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AA0000000000000000000016 /* XCLocalSwiftPackageReference "Packages/CoreKit" */;
 			productName = CoreKit;
+		};
+		AA0000000000000000000019 /* LLMKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA0000000000000000000018 /* XCLocalSwiftPackageReference "Packages/LLMKit" */;
+			productName = LLMKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

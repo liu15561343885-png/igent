@@ -110,8 +110,7 @@ igent/
 │  │  ├─ Anthropic/
 │  │  ├─ Gemini/
 │  │  ├─ AzureOpenAI/
-│  │  └─ OllamaNative/
-│  ├─ Transport/                 SSEDecoder, NDJSONDecoder, HTTPTransport, RetryExecutor
+│  ├─ Transport/                 SSEDecoder, HTTPTransport, RetryExecutor
 │  └─ Profiles/                  ProviderProfile, ProviderDirectory, ModelDiscovery
 ├─ Web/
 │  ├─ Seam                       WebSearchProvider, WebFetchProvider, GroundedSearchProvider
@@ -218,7 +217,7 @@ public enum StreamChunk: Sendable {
 3. 已被 `block-end` 关闭的 index 再收到 delta → 丢弃（防上游异常撑爆内存）。
 4. `usage` 至多一次；`finish` 恰一次且为终态；适配器抛错由 `LlmRuntime` 归一化为 `finish(.error/aborted)`。
 5. 适配器私有元数据（response id、原生 stop reason）走 `finish.meta`，不进内容块。
-6. **载体无关**：SSE（OpenAI 兼容 / Anthropic / Gemini）与 NDJSON（Ollama 原生）都归一到本契约；`StreamChunk` 不感知传输层。
+6. **载体无关**：四族都走 SSE，但帧格式不同；`StreamChunk` 不感知传输层（将来换 WebSocket 也不改契约）。
 
 ### 4.4 终止原因 / 用量 / 失败
 
@@ -351,7 +350,7 @@ public struct ModelDiscoveryRequest: Sendable {
 }
 ```
 
-先打 `GET /v1/models`（Anthropic `/v1/models`、Gemini `models`、Ollama `/api/tags`），失败则退化为"发一条 `max_tokens=1` 的最小请求"验证鉴权。**编辑中的草稿直接可测**，不需要先保存。
+先打 `GET /v1/models`（Anthropic `/v1/models`、Gemini `models`），失败则退化为"发一条 `max_tokens=1` 的最小请求"验证鉴权。**编辑中的草稿直接可测**，不需要先保存。
 
 ### 5.5 四族差异清单（写进 fixture 用例）
 
@@ -368,7 +367,7 @@ public struct ModelDiscoveryRequest: Sendable {
 | 角色 | assistant | assistant | assistant | **`model`** |
 | finish 映射 | `stop`/`length`/`content_filter` | `stop`/`max_output_tokens` | `end_turn`/`max_tokens`/`refusal` | `STOP`/`MAX_TOKENS`/`SAFETY` |
 
-本机模型（Ollama / LM Studio）额外两件事：`NSLocalNetworkUsageDescription`，以及 `http://` 的 ATS 例外 `NSAllowsLocalNetworking`。
+不接本机模型（Ollama / LM Studio）：全部走 HTTPS 云 API，因此 App 不需要本地网络权限，也不需要 ATS 的本地明文例外。
 
 ### 5.6 BlockAssembler
 
@@ -851,7 +850,7 @@ public struct RetryPolicy: Sendable {
 
 - 单 Xcode 工程 + 4 个本地 SPM 包：`CoreKit`、`LLMKit`、`WebSeamKit`、`StorageKit`（便于单测与编译隔离）。
 - 注意：**不要叫 `WebKit`**，会与 Apple 的 WebKit framework 模块名冲突。
-- 现状：`igent.xcodeproj`（objectVersion 77 + 文件系统同步组，**新增文件无需改工程文件**）+ `Packages/CoreKit` 已就位，模拟器可运行。
+- 现状：`igent.xcodeproj`（objectVersion 77 + 文件系统同步组，**新增文件无需改工程文件**）+ `Packages/CoreKit` + `Packages/LLMKit` 已就位，模拟器可运行。
 - 构建：`xcodebuild -project igent.xcodeproj -scheme igent -destination 'platform=iOS Simulator,name=iPhone 16' build`
 - 单测：`cd Packages/CoreKit && swift test`
 - 工程由 `scripts/gen_xcodeproj.py` 一次性生成；**之后请在 Xcode 里编辑，不要重跑该脚本**（会覆盖）。
@@ -871,7 +870,7 @@ public struct RetryPolicy: Sendable {
 |---|---|---|---|
 | **P0 词汇与传输** | 3–4 天 | `CoreKit` 词汇 + `SSEDecoder` + `BlockAssembler` + `OpenAICompatibleAdapter`、`AnthropicAdapter` | 两个 fixture 回放出相同 `[ContentBlock]`；异常流不崩 |
 | **P1 能聊** | 1.5 周 | App 骨架、GRDB 事件日志、流式渲染、Provider 设置、Keychain、模型发现 | OpenAI 兼容 + Anthropic 各接一个真实 Key 连续对话 20 轮无异常 |
-| **P2 四族齐** | 1 周 | Gemini、Responses、Azure、Ollama；思维链渲染；请求检查器；错误/重试 | 同一段对话在 4 家都能流式、取消、报错可读 |
+| **P2 四族齐** | 1 周 | Gemini、Responses、Azure；思维链渲染；请求检查器；错误/重试 | 同一段对话在 4 家都能流式、取消、报错可读 |
 | **P3 图片** | 1 周 | 图片输入（下采样/EXIF/HEIC）、三家视觉映射、图像生成（同步+异步 job） | 一张照片在 3 家都被正确描述；异步任务杀进程后能续 |
 | **P4 联网** | 1 周 | Web seam、原生 grounding 三家、自建管线、引用 UI、来源预览 | 无原生检索的模型也能给出可点击的 `[n]` 引用 |
 | **P5 Skill** | 3–4 天 | frontmatter 解析、文件 provider、`Documents/Skills/` 外编辑、三层激活、chip 与注入展示 | 手写一个 skill 放进 Documents，用 `#` 与自动两种方式都能激活；**把 DSH 的 skill 目录整段拷进来，一个字不改也能用** |
@@ -880,7 +879,7 @@ public struct RetryPolicy: Sendable {
 
 **关键路径**：P0 的 `StreamChunk` 契约和 `BlockAssembler` 一旦定错，后面阶段全部返工。建议 P0 先写 fixture 再写适配器（测试先行）。
 
-**进度**（2026-11-20）：P0 第一步完成 —— `Packages/CoreKit` 落地三份核心定义（`ContentBlock` / `StreamChunk` / `Message`）+ `BlockAssembler` + `SSEDecoder`，23 个单测全绿；`igent.xcodeproj` 生成并验证：`BUILD SUCCEEDED`，模拟器启动后完成一次「字节 → SSE 帧 → 内容块」的运行时自检。尚未做：适配器、golden 夹具。
+**进度**（2026-11-20）：P0 完成 —— `CoreKit`（三份核心定义 + `BlockAssembler` + `SSEDecoder`，23 单测）+ `LLMKit`（OpenAI 兼容 / Anthropic 两族：请求构造、流解析、适配器，23 单测，含 golden 夹具与逐字节分片回放）；`igent.xcodeproj` 可构建，模拟器运行后两个包都通过运行时自检。尚未做：Gemini / Responses / Azure 三族、真实网络联调。
 
 **P5 排在 P6 之前**：skill 依赖 `context/message` 与 surface 替换，这两样已在 P1 就位；而压缩（P6）需要把 skill 正文标记为 `ephemeral`，先有 skill 才好验证压缩是否正确丢弃。
 
@@ -968,7 +967,7 @@ DSH 的 API 词汇和 igent 的 Core 词汇本来就是同一套，所以桥接�
 
 ### 19.6 桥接：已排除
 
-"完全本地"是硬约束，因此不做 `DSHBridgeAdapter`。上面 §19.2 的映射表保留，只作为**词汇对齐的证据**——它证明了 Core 词汇与线上协议同构，将来若要对接别的载体（Ollama NDJSON、自建端点协议）成本同样很低。
+"完全本地"是硬约束，因此不做 `DSHBridgeAdapter`。上面 §19.2 的映射表保留，只作为**词汇对齐的证据**——它证明了 Core 词汇与线上协议同构，将来若要对接别的载体（自建端点协议、WebSocket）成本同样很低。
 
 代价说清楚：放弃桥接 = 放弃"Mac 上已配好的厂商与 skill 自动同步到手机"。替代方案是手工把 `~/.dsh/skills` 里的目录拷进 `Documents/Skills/`，一次性的，可接受。
 
