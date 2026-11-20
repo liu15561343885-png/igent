@@ -507,14 +507,16 @@ final class AppEnvironment {
 
     /// 检索服务的密钥走单独账号，避免与其他配置混淆。
     var apiKeyForWebSearch: String {
-        keychain.get(Keychain.account(for: "websearch")) ?? ""
+        guard let kind = WebSearchKind(rawValue: webSearchKind) else { return "" }
+        return searchKey(for: kind)
     }
 
     func setWebSearchKey(_ value: String) {
         if value.isEmpty {
             keychain.delete(Keychain.account(for: "websearch"))
         } else {
-            try? keychain.set(value, for: Keychain.account(for: "websearch"))
+            let kind = WebSearchKind(rawValue: webSearchKind) ?? .off
+            try? keychain.set(value, for: Keychain.account(for: Self.searchAccount(for: kind)))
             refreshCapabilityFlags()
         }
     }
@@ -561,7 +563,8 @@ extension AppEnvironment {
     /// 文档解析复用 DeepSeek 的 Key：OCR 是 DeepSeek 的工具接口，按页计费。
     func makeDocumentRecognizer() -> (any DocumentRecognizer)? {
         guard WebSearchKind(rawValue: webSearchKind) == .deepseek else { return nil }
-        let key = keychain.get(Keychain.account(for: "websearch")) ?? ""
+        // OCR 是 DeepSeek 的工具接口，只认 DeepSeek 的 Key。
+        let key = searchKey(for: .deepseek)
         guard !key.isEmpty else { return nil }
         return DeepSeekOCRRecognizer(apiKey: key, purpose: documentPurpose.recognizerPurpose)
     }

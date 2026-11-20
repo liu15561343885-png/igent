@@ -25,10 +25,25 @@ enum WebSearchKind: String, CaseIterable, Identifiable {
 }
 
 extension AppEnvironment {
+    /// 检索密钥的钥匙串账号。按厂商分开存——共用一个槽位时，
+    /// 从 Tavily 切到 Brave 会把 Tavily 的 Key 发给 Brave。
+    static func searchAccount(for kind: WebSearchKind) -> String {
+        "websearch." + kind.rawValue
+    }
+
+    /// 读取检索密钥：先找本厂商的槽位，再回退到旧的共用槽位（老版本存的位置）。
+    func searchKey(for kind: WebSearchKind) -> String {
+        if let scoped = keychain.get(Keychain.account(for: Self.searchAccount(for: kind))),
+           !scoped.isEmpty {
+            return scoped
+        }
+        return keychain.get(Keychain.account(for: "websearch")) ?? ""
+    }
+
     /// 网页检索的 provider。未配置密钥时返回 nil，界面据此禁用开关。
     func makeWebSearchProvider() -> (any WebSearchProvider)? {
         guard let kind = WebSearchKind(rawValue: webSearchKind), kind != .off else { return nil }
-        let key = keychain.get(Keychain.account(for: "websearch")) ?? ""
+        let key = searchKey(for: kind)
         guard !key.isEmpty else { return nil }
         switch kind {
         case .deepseek: return DeepSeekSearchProvider(apiKey: key)
@@ -43,7 +58,7 @@ extension AppEnvironment {
     func makeWebFetchProvider() -> any WebFetchProvider {
         let kind = WebSearchKind(rawValue: webSearchKind) ?? .off
         if kind == .deepseek {
-            let key = keychain.get(Keychain.account(for: "websearch")) ?? ""
+            let key = searchKey(for: .deepseek)
             if !key.isEmpty { return DeepSeekFetchProvider(apiKey: key) }
         }
         return HTTPFetcher()

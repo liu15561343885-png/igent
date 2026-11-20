@@ -1,4 +1,5 @@
 # igent 执行方案 v2
+> 本文件同时包含**设计设想**与**已实现记录**。凡与代码不一致处，以 `docs/AUDIT.md` §三 的对照表为准。
 
 > iOS 18+ / SwiftUI / Swift 6 · 单人自用 · 不涉及上架与备案 · 允许服务端检索工具 · 支持 Skill
 >
@@ -1142,11 +1143,11 @@ public struct RetryPolicy: Sendable {
 
 ## 15. 工程组织
 
-- 单 Xcode 工程 + 4 个本地 SPM 包：`CoreKit`、`LLMKit`、`WebSeamKit`、`StorageKit`（便于单测与编译隔离）。
+- 单 Xcode 工程 + 5 个本地 SPM 包：`CoreKit`、`LLMKit`、`WebSeamKit`、`StorageKit`、`AgentKit`（便于单测与编译隔离）。
 - 注意：**不要叫 `WebKit`**，会与 Apple 的 WebKit framework 模块名冲突。
 - 现状：`igent.xcodeproj`（objectVersion 77 + 文件系统同步组，**新增文件无需改工程文件**）+ `Packages/CoreKit` + `Packages/LLMKit` 已就位，模拟器可运行。
 - 构建：`xcodebuild -project igent.xcodeproj -scheme igent -destination 'platform=iOS Simulator,name=iPhone 16' build`
-- 单测：`cd Packages/CoreKit && swift test`
+- 单测：`./scripts/test-all.sh`（改过公共枚举/结构体后用 `--clean`）
 - 工程由 `scripts/gen_xcodeproj.py` 一次性生成；**之后请在 Xcode 里编辑，不要重跑该脚本**（会覆盖）。
 - 依赖：**目前零第三方依赖**（SQLite 走系统库）。后续按需引入 swift-markdown、Splash、SwiftMath、SwiftSoup。
 - 测试：
