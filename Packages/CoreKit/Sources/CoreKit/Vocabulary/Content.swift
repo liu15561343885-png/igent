@@ -9,6 +9,9 @@ public enum BlockType: String, Codable, Sendable, CaseIterable {
     case image
     case context
     case citation
+    /// 厂商私有的不透明块（如 DeepSeek 的 `server_tool_use`）。
+    /// 必须**原样回传**给厂商，否则多轮之后读过或搜过的内容会从上下文里消失。
+    case provider
 }
 
 /// 一张已落盘的图片引用。内容寻址，不携路径语义。
@@ -92,6 +95,23 @@ public struct Citation: Codable, Sendable, Equatable {
     }
 }
 
+/// 厂商私有的不透明块。
+///
+/// 我们不解析它的语义，只保证两件事：原样存进事件日志、原样拼回下一次请求。
+/// DeepSeek 的 `web_fetch_tool_result` 把网页正文加密在 `signature` 里，
+/// 丢了它就等于丢了"上一轮读过的那一页"。
+public struct ProviderBlock: Codable, Sendable, Equatable {
+    /// 厂商块的类型标签，例如 `server_tool_use`、`web_search_tool_result`。
+    public var type: String
+    /// 原始 JSON，不做任何改写。
+    public var payload: JSONValue
+
+    public init(type: String, payload: JSONValue) {
+        self.type = type
+        self.payload = payload
+    }
+}
+
 /// 模型可见的内容块。闭合枚举：新增种类必须同时处理装配、渲染与计量。
 public enum ContentBlock: Codable, Sendable, Equatable {
     case text(String)
@@ -99,6 +119,7 @@ public enum ContentBlock: Codable, Sendable, Equatable {
     case image(ImageAttachmentRef)
     case context(ContextEvidence)
     case citation(Citation)
+    case providerBlock(ProviderBlock)
 
     public var type: BlockType {
         switch self {
@@ -107,6 +128,7 @@ public enum ContentBlock: Codable, Sendable, Equatable {
         case .image: .image
         case .context: .context
         case .citation: .citation
+        case .providerBlock: .provider
         }
     }
 
@@ -117,7 +139,7 @@ public enum ContentBlock: Codable, Sendable, Equatable {
             value
         case let .context(evidence):
             evidence.digest
-        case .image, .citation:
+        case .image, .citation, .providerBlock:
             ""
         }
     }

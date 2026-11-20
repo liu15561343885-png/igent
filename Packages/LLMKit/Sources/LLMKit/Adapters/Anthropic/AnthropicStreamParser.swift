@@ -18,6 +18,7 @@ public struct AnthropicStreamParser: Sendable {
     private var cacheReadTokens: Int?
     private var cacheWriteTokens: Int?
     private var nativeStopReason: String?
+    private var citationCounter = 0
     private var finishReason: FinishReason?
     private var didFinish = false
 
@@ -94,6 +95,13 @@ public struct AnthropicStreamParser: Sendable {
         switch rawType {
         case "thinking": kind = .reasoning
         case "text": kind = .text
+        case "server_tool_use", "web_search_tool_result", "web_fetch_tool_result":
+            // 服务端工具的调用与结果**一次性**到达（不增量），所以当帧就闭合。
+            // 原样保留整块：多轮回传时必须一字不改，否则签名的页面会丢失。
+            return [
+                .blockStart(index: index, type: .provider),
+                .blockEnd(index: index, block: .providerBlock(ProviderBlock(type: rawType, payload: .object(block))))
+            ]
         default:
             // redacted_thinking 等未知块：记录但不产出内容。
             return []
@@ -121,6 +129,25 @@ public struct AnthropicStreamParser: Sendable {
             guard let value = delta["thinking"]?.stringValue, !value.isEmpty else { return [] }
             text[index, default: ""] += value
             return [.reasoningDelta(index: index, text: value)]
+        case "citations_delta":
+            // 引用挂在当前文本块上。我们把它单独成一个块，UI 才能渲染来源卡。
+            guard let citation = delta["citation"]?.objectValue,
+                  let urlString = citation["url"]?.stringValue,
+                  let url = URL(string: urlString)
+            else { return [] }
+            citationCounter += 1
+            let index = 900 + citationCounter
+            return [
+                .blockStart(index: index, type: .citation),
+                .blockEnd(index: index, block: .citation(
+                    Citation(
+                        index: citationCounter,
+                        url: url,
+                        title: citation["title"]?.stringValue
+                    )
+                ))
+            ]
+
         case "signature_delta", "input_json_delta":
             // 签名与工具参数：前者无需展示，后者不声明工具时不会出现。
             return []

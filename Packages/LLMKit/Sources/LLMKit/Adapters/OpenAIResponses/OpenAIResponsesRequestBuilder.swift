@@ -80,6 +80,9 @@ public struct OpenAIResponsesRequestBuilder: Sendable {
                 ]))
             case .reasoning, .citation:
                 continue
+            case .providerBlock:
+                // 厂商私有块只在同一厂商间回传，跨厂商时丢弃。
+                continue
             }
         }
 

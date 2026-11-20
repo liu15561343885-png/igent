@@ -82,6 +82,9 @@ public struct GeminiRequestBuilder: Sendable {
             case .reasoning, .citation:
                 // 思维链不回灌：Gemini 的 thought 部分带签名，自行拼接会破坏校验。
                 continue
+            case .providerBlock:
+                // 厂商私有块只在同一厂商间回传，跨厂商时丢弃。
+                continue
             }
         }
 

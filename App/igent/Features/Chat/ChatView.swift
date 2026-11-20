@@ -327,11 +327,21 @@ struct ChatView: View {
             contextWindow: profile.contextWindow
         )
         let skills = env.resolveSkills(pending: model.pendingSkill, text: model.draft)
+
+        // 两种联网模式：
+        // - 厂商支持服务端工具（DeepSeek）：把工具声明发给模型，由它决定搜不搜、搜几次、开哪些页；
+        // - 其他厂商：退回应用侧的一次性检索，把结果塞进上下文。
+        let serverTools = model.webSearchEnabled && !profile.capabilities.serverTools.isEmpty
+            ? profile.capabilities.serverTools
+            : []
+        let useAppSearch = model.webSearchEnabled && serverTools.isEmpty
+
         model.send(
             configuration: configuration,
-            webSearch: env.makeWebSearchProvider(),
-            webFetch: env.makeWebFetchProvider(),
-            skills: skills
+            webSearch: useAppSearch ? env.makeWebSearchProvider() : nil,
+            webFetch: useAppSearch ? env.makeWebFetchProvider() : nil,
+            skills: skills,
+            serverTools: serverTools
         )
     }
 

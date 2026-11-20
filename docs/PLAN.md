@@ -521,6 +521,33 @@ public struct WebSource: Codable, Sendable, Identifiable {
 
 `WebFetchedBody` 用闭合枚举：`.html(String)` / `.text(String)` / `.json(Data)` / `.binary(mediaType, Data)` / `.unsupported(mediaType)`。
 
+### 8.1.1 DeepSeek：两种联网，分工不同
+
+DeepSeek 同时提供两套能力，我们把它们放在不同层次上：
+
+| | 服务端工具（Web Tools） | Search & Fetch API |
+|---|---|---|
+| 谁决定搜 | **模型自己** | 应用决定 |
+| 能力 | 搜索 / 开页 / 页内查找，最多约 20 步 | 单次查询、单页抓取 |
+| 计费 | 搜索免费，只算 token | $0.75 / 千次成功请求 |
+| 用在哪 | 有服务端工具的厂商（DeepSeek） | 其他厂商的兜底路径 |
+
+“联网搜索”开关因此有两种含义：
+
+- 厂商声明了 `serverTools` → 把工具声明发给模型，**由它决定搜不搜、搜几次、开哪些页**；
+- 没有 → 退回应用侧的一次性检索（检索 → 抓取 → 注入 context）。
+
+### 8.1.2 服务端工具的实现要点
+
+| 点 | 做法 |
+|---|---|
+| 声明 | `tools: [{type:"deepseek_web_search", name:"..."}, …]`，用 `ServerToolSpec` 数据描述，加一家的原生检索只加配置 |
+| 关闭 | **不声明工具**。不能用 `tool_choice: none`——文档明确它会连 URL 阅读一起关掉 |
+| 解析 | `server_tool_use` / `web_search_tool_result` / `web_fetch_tool_result` 一次性到达，当帧闭合 |
+| 回传 | 新增 `ContentBlock.providerBlock`，**原样存、原样回传**。DeepSeek 把网页正文加密在 `signature` 里，丢了它上一轮读过的页就从上下文里消失 |
+| 引用 | `citations_delta` → 独立的 `citation` 块，UI 渲染成来源卡 |
+| UI | 气泡顶部显示“检索了哪些词 / 打开哪个站”，底部是来源卡 |
+
 ### 8.2 两条路径统一成 `context/message`
 
 | 路径 | 做法 |
@@ -1017,7 +1044,7 @@ public struct RetryPolicy: Sendable {
 
 **关键路径**：P0 的 `StreamChunk` 契约和 `BlockAssembler` 一旦定错，后面阶段全部返工。建议 P0 先写 fixture 再写适配器（测试先行）。
 
-**进度**（2026-11-20）：功能全部落地 + 自动压缩（压力阈值 + 溢出恢复，参考 DSH）。**241 单测**，六个包全绿。未做：图片异步 job、真实 Key 联调。
+**进度**（2026-11-20）：功能全部落地 + 自动压缩 + DeepSeek 两套联网（服务端工具 + Search/Fetch API）。**256 单测**，六个包全绿。未做：图片异步 job、真实 Key 联调。
 
 **P5 排在 P6 之前**：skill 依赖 `context/message` 与 surface 替换，这两样已在 P1 就位；而压缩（P6）需要把 skill 正文标记为 `ephemeral`，先有 skill 才好验证压缩是否正确丢弃。
 

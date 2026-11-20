@@ -19,6 +19,17 @@ public enum CallPurpose: String, Codable, Sendable, CaseIterable {
     case skillRoute
 }
 
+/// 服务端工具声明。放在请求里（而不是 profile 里）是因为"这次允许联网"是每轮的决定。
+public struct ServerToolRequest: Codable, Sendable, Equatable, Hashable {
+    public var wireType: String
+    public var name: String
+
+    public init(wireType: String, name: String? = nil) {
+        self.wireType = wireType
+        self.name = name ?? wireType
+    }
+}
+
 /// 一次模型请求。厂商中立的完整入参。
 public struct GenerateOptions: Sendable {
     public var provider: String
@@ -33,6 +44,8 @@ public struct GenerateOptions: Sendable {
     public var purpose: CallPurpose?
     /// 是否流式请求。P0 只实现流式；非流式留作后续。
     public var stream: Bool
+    /// 本轮允许模型使用的服务端工具。空表示不允许联网。
+    public var serverTools: [ServerToolRequest]
     /// 厂商私有参数逃生口，原样合并进请求体。
     public var extras: [String: JSONValue]
 
@@ -47,6 +60,7 @@ public struct GenerateOptions: Sendable {
         reasoning: ReasoningEffort? = nil,
         purpose: CallPurpose? = nil,
         stream: Bool = true,
+        serverTools: [ServerToolRequest] = [],
         extras: [String: JSONValue] = [:]
     ) {
         self.provider = provider
@@ -59,6 +73,7 @@ public struct GenerateOptions: Sendable {
         self.reasoning = reasoning
         self.purpose = purpose
         self.stream = stream
+        self.serverTools = serverTools
         self.extras = extras
     }
 }

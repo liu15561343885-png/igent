@@ -28,6 +28,54 @@ struct MessageBubble: View {
         return hasCode ? 0.92 : Theme.bubbleMaxWidth
     }
 
+    /// 服务端工具的调用痕迹：检索了哪些词、开了哪些页。
+    /// 不展示这些，用户只会看到「答案里突然多出引用」，不知道模型做了什么。
+    private var providerRows: [(icon: String, text: String)] {
+        message.blocks.compactMap { block in
+            guard case let .providerBlock(payload) = block else { return nil }
+            let object = payload.payload.objectValue
+            switch payload.type {
+            case "server_tool_use":
+                let input = object?["input"]?.objectValue
+                switch input?["action"]?.stringValue ?? "" {
+                case "search":
+                    let queries = input?["queries"]?.arrayValue?
+                        .compactMap { $0.stringValue }.joined(separator: " / ") ?? ""
+                    return ("magnifyingglass", queries.isEmpty ? "联网检索" : queries)
+                case "open_page":
+                    return ("doc.text.magnifyingglass", "打开 \(shortHost(input?["url"]?.stringValue))")
+                case "find_in_page":
+                    return ("text.magnifyingglass", "页内查找「\(input?["pattern"]?.stringValue ?? "")」")
+                case "read_link":
+                    return ("link", "读取 \(shortHost(input?["url"]?.stringValue))")
+                default:
+                    return nil
+                }
+            case "web_search_tool_result":
+                let count = object?["content"]?.arrayValue?.count ?? 0
+                return ("list.bullet", "找到 \(count) 条结果")
+            case "web_fetch_tool_result":
+                let title = object?["content"]?.objectValue?["title"]?.stringValue ?? ""
+                return ("doc.richtext", title.isEmpty ? "已读取页面" : "已读取：\(title)")
+            default:
+                return nil
+            }
+        }
+    }
+
+    private var citations: [Citation] {
+        message.blocks.compactMap { block -> Citation? in
+            if case let .citation(value) = block { value } else { nil }
+        }
+    }
+
+    private func shortHost(_ urlString: String?) -> String {
+        guard let urlString, let host = URL(string: urlString)?.host() else {
+            return urlString ?? "页面"
+        }
+        return host
+    }
+
     private var images: [ImageAttachmentRef] {
         message.blocks.compactMap { block -> ImageAttachmentRef? in
             if case let .image(ref) = block { ref } else { nil }
@@ -48,6 +96,17 @@ struct MessageBubble: View {
                 if !images.isEmpty {
                     ForEach(images, id: \.id) { ref in
                         AttachmentThumbnail(reference: ref)
+                    }
+                }
+
+                if !providerRows.isEmpty {
+                    VStack(alignment: .leading, spacing: 3) {
+                        ForEach(Array(providerRows.enumerated()), id: \.offset) { _, row in
+                            Label(row.text, systemImage: row.icon)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
                     }
                 }
 
@@ -76,6 +135,28 @@ struct MessageBubble: View {
                     // 模型输出几乎总是 Markdown；用户输入按原样显示，避免误伤。
                     MarkdownView(text: body_)
                         .textSelection(.enabled)
+                }
+
+                if !citations.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(Array(citations.enumerated()), id: \.offset) { _, citation in
+                                Link(destination: citation.url) {
+                                    HStack(spacing: 3) {
+                                        Image(systemName: "link")
+                                        Text(citation.title ?? (citation.url.host() ?? ""))
+                                            .lineLimit(1)
+                                    }
+                                    .font(.caption2)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(Color.primary.opacity(0.07), in: Capsule())
+                                }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
                 }
 
                 if isStreaming {

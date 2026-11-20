@@ -20,6 +20,15 @@ public struct AnthropicRequestBuilder: Sendable {
     ) -> JSONValue {
         var root: [String: JSONValue] = [:]
         root["model"] = .string(options.model)
+
+        if !options.serverTools.isEmpty {
+            root["tools"] = .array(options.serverTools.map { tool in
+                .object([
+                    "type": .string(tool.wireType),
+                    "name": .string(tool.name)
+                ])
+            })
+        }
         root["max_tokens"] = .number(Double(options.maxTokens ?? profile.capabilities.defaultMaxTokens ?? 4096))
         root["stream"] = .bool(options.stream)
 
@@ -104,6 +113,10 @@ public struct AnthropicRequestBuilder: Sendable {
                     "type": .string("text"),
                     "text": .string(ContextRendering.render(evidence))
                 ]))
+            case let .providerBlock(block):
+                // 原样回传：DeepSeek 把网页正文加密在 signature 里，
+                // 改动或丢弃都会让"上一轮读过的那一页"从上下文里消失。
+                blocks.append(block.payload)
             case .reasoning, .citation:
                 continue
             }

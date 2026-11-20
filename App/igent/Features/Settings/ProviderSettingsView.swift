@@ -316,6 +316,8 @@ struct ProviderDraft: Identifiable {
     var baseURL: String
     var apiKey: String
     var isNew: Bool
+    /// 是否启用服务端联网工具（目前用于 DeepSeek）。
+    var serverToolsEnabled: Bool
 
     static func new() -> ProviderDraft {
         ProviderDraft(
@@ -324,7 +326,8 @@ struct ProviderDraft: Identifiable {
             family: .openAICompatible,
             baseURL: "https://api.openai.com/v1",
             apiKey: "",
-            isNew: true
+            isNew: true,
+            serverToolsEnabled: false
         )
     }
 
@@ -335,15 +338,25 @@ struct ProviderDraft: Identifiable {
         baseURL = profile.baseURL.absoluteString
         self.apiKey = apiKey
         isNew = false
+        serverToolsEnabled = !profile.capabilities.serverTools.isEmpty
     }
 
-    init(id: String, name: String, family: ProviderFamily, baseURL: String, apiKey: String, isNew: Bool) {
+    init(
+        id: String,
+        name: String,
+        family: ProviderFamily,
+        baseURL: String,
+        apiKey: String,
+        isNew: Bool,
+        serverToolsEnabled: Bool = false
+    ) {
         self.id = id
         self.name = name
         self.family = family
         self.baseURL = baseURL
         self.apiKey = apiKey
         self.isNew = isNew
+        self.serverToolsEnabled = serverToolsEnabled
     }
 
     /// 由表单字段生成可入库的 profile。路径与鉴权按协议族决定。
@@ -442,11 +455,24 @@ struct ProviderEditorView: View {
     }
 
     private var endpointSection: some View {
-        Section("端点") {
+        Section {
+            // 标题与 footer 同时出现时必须用 header/footer 形式，
+            // `Section("标题") { } footer: { }` 不是合法初始化器。
+
             TextField("Base URL", text: $draft.baseURL)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .keyboardType(.URL)
+
+            if draft.family == .anthropic {
+                Toggle("启用服务端联网（DeepSeek）", isOn: $draft.serverToolsEnabled)
+            }
+        } header: {
+            Text("端点")
+        } footer: {
+            if draft.family == .anthropic {
+                Text("开启后，对话里的「联网搜索」会把 web_search / read_url 工具声明给模型，由它自己决定搜什么、开哪些页面。地址填 https://api.deepseek.com/anthropic/v1，模型填 deepseek-flash。")
+            }
         }
     }
 

@@ -37,6 +37,8 @@ public actor TurnOrchestrator {
         public var maxTokens: Int?
         /// 模型上下文窗口，用于自动压缩的阈值判断。
         public var contextWindow: Int
+        /// 本轮允许模型使用的服务端工具。非空表示"让模型自己决定要不要联网"。
+        public var serverTools: [ServerToolRequest]
 
         public init(
             provider: String,
@@ -44,7 +46,8 @@ public actor TurnOrchestrator {
             system: String? = nil,
             temperature: Double? = nil,
             maxTokens: Int? = nil,
-            contextWindow: Int = 128_000
+            contextWindow: Int = 128_000,
+            serverTools: [ServerToolRequest] = []
         ) {
             self.provider = provider
             self.model = model
@@ -52,6 +55,7 @@ public actor TurnOrchestrator {
             self.temperature = temperature
             self.maxTokens = maxTokens
             self.contextWindow = contextWindow
+            self.serverTools = serverTools
         }
     }
 
@@ -161,7 +165,8 @@ public actor TurnOrchestrator {
                     messages: history,
                     system: configuration.system,
                     temperature: configuration.temperature,
-                    maxTokens: configuration.maxTokens
+                    maxTokens: configuration.maxTokens,
+                    serverTools: configuration.serverTools
                 )
 
                 do {

@@ -9,6 +9,10 @@ public enum ProviderFamily: String, Codable, Sendable, CaseIterable {
     case gemini
 }
 
+/// 厂商支持的服务端工具，用 CoreKit 的 ServerToolRequest 描述，
+/// 这样 profile 里声明的和每轮传的走同一个类型。
+public typealias ServerToolSpec = ServerToolRequest
+
 /// 系统提示放在哪里。同样是"OpenAI 兼容"，不同厂商也不一致。
 public enum SystemStyle: String, Codable, Sendable {
     /// messages[0] role=system
@@ -33,6 +37,8 @@ public struct Capabilities: Codable, Sendable, Equatable, Hashable {
     public var defaultMaxTokens: Int?
     /// 模型上下文窗口。用于自动压缩的阈值判断；nil 表示未知（按 128k 处理）。
     public var contextWindow: Int?
+    /// 该厂商支持的服务端工具。非空表示"可以让模型自己联网"。
+    public var serverTools: [ServerToolSpec]
 
     public init(
         vision: Bool = false,
@@ -43,7 +49,8 @@ public struct Capabilities: Codable, Sendable, Equatable, Hashable {
         usesMaxCompletionTokens: Bool = false,
         systemStyle: SystemStyle = .message,
         defaultMaxTokens: Int? = nil,
-        contextWindow: Int? = nil
+        contextWindow: Int? = nil,
+        serverTools: [ServerToolSpec] = []
     ) {
         self.vision = vision
         self.imageOut = imageOut
@@ -54,6 +61,7 @@ public struct Capabilities: Codable, Sendable, Equatable, Hashable {
         self.systemStyle = systemStyle
         self.defaultMaxTokens = defaultMaxTokens
         self.contextWindow = contextWindow
+        self.serverTools = serverTools
     }
 }
 

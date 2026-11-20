@@ -43,9 +43,24 @@ public enum TokenEstimator {
                 total += 800
             case .citation:
                 total += 8
+            case let .providerBlock(block):
+                // 这些块的正文是密文或结构化 JSON，按体积粗估即可。
+                total += max(8, roughSize(block.payload) / 4)
             }
         }
         return total
+    }
+
+    /// 递归统计 JSON 的字符规模，避免为了估 token 而先序列化一遍。
+    static func roughSize(_ value: JSONValue) -> Int {
+        switch value {
+        case .null: 4
+        case .bool: 5
+        case .number: 8
+        case let .string(text): text.count
+        case let .array(items): items.reduce(0) { $0 + roughSize($1) + 1 }
+        case let .object(fields): fields.reduce(0) { $0 + $1.key.count + roughSize($1.value) + 4 }
+        }
     }
 
     public static func estimate(_ messages: [Message]) -> Int {

@@ -90,7 +90,8 @@ final class ChatViewModel {
         configuration: TurnOrchestrator.Configuration,
         webSearch: (any WebSearchProvider)? = nil,
         webFetch: (any WebFetchProvider)? = nil,
-        skills: [SkillDefinition] = []
+        skills: [SkillDefinition] = [],
+        serverTools: [ServerToolRequest] = []
     ) {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let image = pendingImage
@@ -120,6 +121,7 @@ final class ChatViewModel {
         // 不必为此新增内容块类型。代价是每轮 system 变化，前缀缓存会失效。
         var effective = configuration
         effective.system = SkillRenderer.system(skills)
+        effective.serverTools = serverTools
         pendingSkill = nil
 
         lastModel = effective.model
