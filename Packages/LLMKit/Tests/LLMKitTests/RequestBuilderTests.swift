@@ -196,3 +196,53 @@ extension JSONValue {
         }
     }
 }
+
+// MARK: - Anthropic 角色交替
+
+extension RequestBuilderTests {
+    private func messages(of body: JSONValue) -> [[String: JSONValue]] {
+        (body.objectValue?["messages"]?.arrayValue ?? []).compactMap(\.objectValue)
+    }
+
+    /// 压缩后摘要（context→user）会紧跟一条用户消息，必须合并，
+    /// 否则 Anthropic 会因为"roles must alternate"直接 400。
+    func testAnthropicMergesConsecutiveUserMessages() {
+        var options = baseOptions
+        options.messages = [
+            Message(role: .context, blocks: [.text("【此前对话的要点】A")], source: .compactionSummary(compactionID: UUID())),
+            Message(role: .user, blocks: [.text("继续问")], source: .user)
+        ]
+        let built = AnthropicRequestBuilder(profile: .anthropic()).body(options)
+        let list = messages(of: built)
+
+        XCTAssertEqual(list.count, 1, "两条 user 应合并成一条")
+        XCTAssertEqual(list.first?["role"], .string("user"))
+        let blocks = list.first?["content"]?.arrayValue ?? []
+        XCTAssertEqual(blocks.count, 2)
+    }
+
+    func testAnthropicKeepsAlternatingMessagesSeparate() {
+        var options = baseOptions
+        options.messages = [
+            Message(role: .user, blocks: [.text("问")], source: .user),
+            Message(role: .assistant, blocks: [.text("答")], source: .model(provider: "p", model: "m", meta: nil)),
+            Message(role: .user, blocks: [.text("再问")], source: .user)
+        ]
+        let built = AnthropicRequestBuilder(profile: .anthropic()).body(options)
+        XCTAssertEqual(messages(of: built).map { $0["role"]?.stringValue }, ["user", "assistant", "user"])
+    }
+
+    /// 空消息被跳过时不能打断合并逻辑。
+    func testAnthropicSkipsEmptyWithoutBreakingMerge() {
+        var options = baseOptions
+        options.messages = [
+            Message(role: .user, blocks: [.text("第一段")], source: .user),
+            Message(role: .user, blocks: [], source: .user),
+            Message(role: .user, blocks: [.text("第二段")], source: .user)
+        ]
+        let built = AnthropicRequestBuilder(profile: .anthropic()).body(options)
+        let list = messages(of: built)
+        XCTAssertEqual(list.count, 1)
+        XCTAssertEqual(list.first?["content"]?.arrayValue?.count, 2)
+    }
+}

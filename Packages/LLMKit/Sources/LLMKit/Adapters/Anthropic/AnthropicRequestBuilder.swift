@@ -27,12 +27,35 @@ public struct AnthropicRequestBuilder: Sendable {
             root["system"] = .string(system)
         }
 
+        // Anthropic 要求 user/assistant 严格交替，连续同角色会被 400 拒绝。
+        // 压缩后的摘要（context → user）后面紧跟用户原话时就会出现这种情况，
+        // 所以这里把相邻同角色的内容合并成一条。
         var messages: [JSONValue] = []
+        var pendingRole: String?
+        var pendingBlocks: [JSONValue] = []
+
+        func flush() {
+            guard let role = pendingRole, !pendingBlocks.isEmpty else { return }
+            messages.append(.object([
+                "role": .string(role),
+                "content": .array(pendingBlocks)
+            ]))
+            pendingRole = nil
+            pendingBlocks = []
+        }
+
         for message in options.messages where message.role != .system {
-            if let wire = wire(message, image: image) {
-                messages.append(wire)
+            guard let (role, blocks) = wire(message, image: image), !blocks.isEmpty else { continue }
+            if role == pendingRole {
+                pendingBlocks.append(contentsOf: blocks)
+            } else {
+                flush()
+                pendingRole = role
+                pendingBlocks = blocks
             }
         }
+        flush()
+
         root["messages"] = .array(messages)
 
         if let temperature = options.temperature {
@@ -48,10 +71,11 @@ public struct AnthropicRequestBuilder: Sendable {
     }
 
     /// Anthropic 拒绝空 content 数组，因此没有可用块的 message 直接不发送。
+    /// 返回角色与内容块。Anthropic 拒绝空 content 数组，所以没有可用块时返回 nil。
     private func wire(
         _ message: Message,
         image: (ImageAttachmentRef) -> (mediaType: String, base64: String)?
-    ) -> JSONValue? {
+    ) -> (role: String, blocks: [JSONValue])? {
         let role = message.role == .assistant ? "assistant" : "user"
         var blocks: [JSONValue] = []
 
@@ -86,9 +110,6 @@ public struct AnthropicRequestBuilder: Sendable {
         }
 
         guard !blocks.isEmpty else { return nil }
-        return .object([
-            "role": .string(role),
-            "content": .array(blocks)
-        ])
+        return (role, blocks)
     }
 }
