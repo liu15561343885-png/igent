@@ -22,6 +22,18 @@ public enum AdapterError: Error, Equatable {
 
 extension LlmFailure {
     /// 把 HTTP 状态码归一成稳定错误类别。
+    /// 各厂商表示"超出上下文"的明确措辞。宁可漏判（退化成 invalidRequest），
+    /// 也不能误判——误判会触发压缩，而压缩是不可逆的。
+    static let overflowMarkers = [
+        "context_length_exceeded",
+        "context length",
+        "maximum context",
+        "prompt is too long",
+        "too many tokens",
+        "reduce the length of the messages",
+        "exceeds the maximum"
+    ]
+
     public static func from(status: Int, body: String, retryAfterSeconds: Int? = nil) -> LlmFailure {
         let lowercased = body.lowercased()
         let code: LlmErrorCode
@@ -33,14 +45,15 @@ extension LlmFailure {
         case 400..<500:
             // 4xx 的语义只能靠报文判断，逐条分开写——`case a, b, c where x` 的 where
             // 只作用于最后一个模式，会把「所有 400」都吞进条件分支。
-            if lowercased.contains("context") || lowercased.contains("too long") {
+            if Self.overflowMarkers.contains(where: { lowercased.contains($0) }) {
                 code = .contextWindowExceeded
-            } else if lowercased.contains("quota") || status == 402 {
+            } else if status == 402 || lowercased.contains("quota") {
                 code = .quota
-            } else if lowercased.contains("image") {
-                code = .imageTooLarge
             } else {
-                code = .invalidCredential
+                // 以前这里回落到 invalidCredential，会把"参数错误"显示成"密钥无效"；
+                // 更糟的是用过宽的 `"context"` 子串判定，一个被拒的 context 字段
+                // 就能触发压缩，把历史真的压掉。所以只认厂商的明确措辞。
+                code = .invalidRequest
             }
         default:
             code = status >= 500 ? .server : .network

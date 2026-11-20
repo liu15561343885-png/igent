@@ -33,10 +33,14 @@ final class Database {
         guard sqlite3_open_v2(path, &handle, flags, nil) == SQLITE_OK, handle != nil else {
             let message = handle.map { String(cString: sqlite3_errmsg($0)) } ?? "unknown"
             sqlite3_close(handle)
+            // 置空：抛出后 deinit 仍会执行，不清零就会二次 close（use-after-free）。
+            handle = nil
             throw StoreError.open(message: message)
         }
         try execute("PRAGMA journal_mode = WAL")
         try execute("PRAGMA foreign_keys = ON")
+        // WAL 下写写并发仍可能撞 BUSY，给一个等待窗口而不是立刻失败。
+        try execute("PRAGMA busy_timeout = 5000")
     }
 
     deinit {

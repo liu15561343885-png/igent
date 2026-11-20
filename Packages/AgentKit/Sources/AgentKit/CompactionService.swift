@@ -90,7 +90,9 @@ public actor CompactionService {
 
         let targets = Array(projection.messages.prefix(compactCount))
         let seqs = Array(projection.messageSeqs.prefix(compactCount))
-        guard let firstSeq = seqs.first, let lastSeq = seqs.last else { return nil }
+        // 即便投影层的顺序假设被破坏，也不能生成 start > end 的区间——
+        // 那种 replace 会静默失败，表现为"压缩过但上下文没变短"。
+        guard let firstSeq = seqs.min(), let lastSeq = seqs.max() else { return nil }
 
         let transcript = Self.render(targets)
         let options = GenerateOptions(

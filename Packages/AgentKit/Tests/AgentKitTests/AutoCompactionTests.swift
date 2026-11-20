@@ -250,3 +250,72 @@ final class TokenEstimatorTests: XCTestCase {
         XCTAssertGreaterThan(TokenEstimator.estimate(withImage), TokenEstimator.estimate(textOnly) + 500)
     }
 }
+
+/// 摘要调用专用的桩：永远返回一句摘要文本。
+private struct SummaryOnlyAdapter: LlmAdapter {
+    var profile: ProviderProfile
+
+    func stream(_ options: GenerateOptions) -> AsyncThrowingStream<StreamChunk, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.yield(.textDelta(index: 0, text: "要点若干"))
+            continuation.yield(.finish(.stop, meta: nil))
+            continuation.finish()
+        }
+    }
+}
+
+final class CompactionRepeatTests: XCTestCase {
+    /// 第二次压缩必须把第一次的摘要一起覆盖掉。
+    ///
+    /// 这里有个隐蔽前提：替换节点的 seq 取**区间起点**而不是新事件 seq。
+    /// 否则 messageSeqs 非单调，第二次算出的 start > end，replace 删不掉任何东西，
+    /// 结果是摘要越堆越多、上下文一点没瘦。
+    func testSecondCompactionShadowsTheFirstSummary() async throws {
+        let store = try SessionStore.inMemory()
+        let runtime = LlmRuntime()
+        _ = try await runtime.register(
+            providers: ["stub"],
+            adapter: SummaryOnlyAdapter(
+                profile: .openAICompatible(id: "stub", name: "S", baseURL: "https://stub.test/v1")
+            )
+        )
+        let session = try await store.createSession()
+        for index in 0..<10 {
+            let user = Message(role: .user, blocks: [.text("问题\(index)")], source: .user)
+            let answer = Message(
+                role: .assistant, blocks: [.text("回答\(index)")],
+                source: .model(provider: "stub", model: "stub", meta: nil)
+            )
+            _ = try await store.append(.userMessage(user), to: session.id, surfaceOp: .append)
+            _ = try await store.append(
+                .assistantMessage(answer, usage: nil, interrupted: false),
+                to: session.id, surfaceOp: .append
+            )
+        }
+
+        let compactor = CompactionService(store: store, runtime: runtime)
+
+        // 第一次保留 8 条，第二次只保留 6 条 → 第二轮的压缩区间会**包含**第一份摘要。
+        // 这正是会触发 size 倒置的场景：只压摘要本身时是看不出来的。
+        _ = try await compactor.compact(.init(
+            sessionID: session.id, provider: "stub", model: "stub", keepRecentMessages: 8
+        ))
+        let afterFirst = try await store.projection(for: session.id)
+
+        _ = try await compactor.compact(.init(
+            sessionID: session.id, provider: "stub", model: "stub", keepRecentMessages: 6
+        ))
+        let afterSecond = try await store.projection(for: session.id)
+
+        let summaries = afterSecond.messages.filter {
+            if case .compactionSummary = $0.source { return true }
+            return false
+        }
+        XCTAssertEqual(summaries.count, 1, "第二次压缩应覆盖第一份摘要，而不是叠加")
+        XCTAssertLessThanOrEqual(afterSecond.messages.count, afterFirst.messages.count)
+        XCTAssertEqual(
+            afterSecond.messageSeqs, afterSecond.messageSeqs.sorted(),
+            "投影的 seq 必须单调，否则后续区间计算会倒置"
+        )
+    }
+}

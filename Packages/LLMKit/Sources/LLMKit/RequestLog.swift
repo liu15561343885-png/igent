@@ -119,7 +119,7 @@ public struct LoggingTransport: StreamTransport {
                         startedAt: startedAt,
                         provider: label,
                         method: request.httpMethod ?? "GET",
-                        url: request.url?.absoluteString ?? "",
+                        url: Self.redactedURL(request.url),
                         headers: Self.redacted(request.allHTTPHeaderFields ?? [:]),
                         bodyPreview: Self.bodyPreview(request.httpBody)
                     )
@@ -177,9 +177,39 @@ public struct LoggingTransport: StreamTransport {
         "authorization", "x-api-key", "api-key", "x-goog-api-key", "cookie"
     ]
 
+    /// URL 里可能带密钥：`AuthStyle.queryKey` 就是把 key 拼进查询串的。
+    /// 值匹配到密钥类字段名时整体替换，其余参数保留（`alt=sse`、`api-version` 有用）。
+    static func redactedURL(_ url: URL?) -> String {
+        guard let url,
+              var components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let items = components.queryItems,
+              !items.isEmpty
+        else {
+            return url?.absoluteString ?? ""
+        }
+        guard items.contains(where: { Self.isSecretName($0.name) }) else {
+            return url.absoluteString
+        }
+        components.queryItems = items.map { item in
+            Self.isSecretName(item.name)
+                ? URLQueryItem(name: item.name, value: "REDACTED")
+                : item
+        }
+        return components.string ?? url.absoluteString
+    }
+
+    /// 头部与参数共用的密钥名判定：`authorization`、`x-api-key`、`x-auth-token`…
+    static func isSecretName(_ name: String) -> Bool {
+        let lower = name.lowercased()
+        return ["authorization", "cookie", "key", "token", "secret", "auth"]
+            .contains { lower.contains($0) }
+    }
+
     static func redacted(_ headers: [String: String]) -> [String: String] {
         headers.reduce(into: [:]) { result, entry in
-            if sensitiveHeaders.contains(entry.key.lowercased()) {
+            // 除了固定的几家，还按名字模式兜底：厂商配置是数据驱动的，
+            // 用户完全可以把鉴权头写成 `x-auth-token`，固定清单会漏。
+            if sensitiveHeaders.contains(entry.key.lowercased()) || isSecretName(entry.key) {
                 result[entry.key] = "••••"
             } else {
                 result[entry.key] = entry.value

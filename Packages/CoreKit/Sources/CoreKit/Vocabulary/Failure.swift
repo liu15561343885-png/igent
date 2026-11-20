@@ -4,6 +4,8 @@ import Foundation
 public enum LlmErrorCode: String, Codable, Sendable, CaseIterable {
     case auth
     case invalidCredential
+    /// 4xx 但既不是鉴权、也不是配额或超窗（参数错误、模型不存在、格式不支持等）。
+    case invalidRequest
     case rateLimit
     case quota
     case contextWindowExceeded
@@ -45,7 +47,7 @@ public struct LlmFailure: Error, Codable, Sendable, Equatable {
         switch code {
         case .rateLimit, .server, .network, .emptyResponse, .decodeFailed:
             true
-        case .auth, .invalidCredential, .quota, .contextWindowExceeded,
+        case .auth, .invalidCredential, .invalidRequest, .quota, .contextWindowExceeded,
              .contentFilter, .unsupportedCapability, .imageTooLarge,
              .noAdapter, .cancelled:
             false

@@ -46,6 +46,8 @@ final class ChatViewModel {
     private(set) var isParsingDocument = false
     /// 解析进度文案，供输入条显示。
     private(set) var parsingStatus: String?
+    /// 回合序号。停止时的兜底逻辑靠它判断"是否已经开了新回合"，避免误清新回合的状态。
+    private var turnCounter = 0
 
     private let store: SessionStore
     private let orchestrator: TurnOrchestrator
@@ -137,6 +139,13 @@ final class ChatViewModel {
             return
         }
 
+        // 先校验再清空：解析器缺失时若先清空，用户打的字和附件就没了。
+        if !documents.isEmpty, recognizer == nil {
+            lastError = "没有配置文档解析所需的 DeepSeek Key"
+            return
+        }
+        let documentRecognizer = recognizer
+
         draft = ""
         pendingImage = nil
         pendingDocuments = []
@@ -157,13 +166,11 @@ final class ChatViewModel {
             return
         }
 
-        guard let recognizer else {
-            lastError = "没有配置文档解析所需的 DeepSeek Key"
-            return
-        }
 
         // 解析要花几秒到几十秒（扫描件更久），先把界面切到「解析中」，
         // 而不是让发送按钮看起来没反应。
+        guard let documentRecognizer else { return }
+
         isParsingDocument = true
         streamTask = Task { [weak self] in
             guard let self else { return }
@@ -174,7 +181,7 @@ final class ChatViewModel {
                     ? "正在解析 \(index + 1)/\(queue.count)…"
                     : "正在解析…"
                 do {
-                    let recognized = try await recognizer.recognize(
+                    let recognized = try await documentRecognizer.recognize(
                         data: queue[index].data,
                         filename: queue[index].name
                     )
@@ -189,6 +196,9 @@ final class ChatViewModel {
                     // 重试时不会重复解析、重复计费。
                     self.lastError = "「\(queue[index].name)」解析失败：\(error)"
                     self.pendingDocuments = queue
+                    // 用户刚打的字和图片也要还回去，否则一次网络失败就白写了。
+                    if self.draft.isEmpty { self.draft = text }
+                    if self.pendingImage == nil { self.pendingImage = image }
                     self.isParsingDocument = false
                     self.parsingStatus = nil
                     return
@@ -223,6 +233,7 @@ final class ChatViewModel {
         skills: [SkillDefinition],
         serverTools: [ServerToolRequest]
     ) {
+        turnCounter += 1
         isStreaming = true
         isThinking = true
         searchSkipped = false
@@ -353,9 +364,34 @@ final class ChatViewModel {
     }
 
     func stop() {
-        streamTask?.cancel()
-        streamTask = nil
-        Task { await orchestrator.cancel() }
+        if isParsingDocument {
+            // 解析阶段直接掐断；已经选中的文件不再恢复（需要重新选）。
+            streamTask?.cancel()
+            streamTask = nil
+            isParsingDocument = false
+            parsingStatus = nil
+            return
+        }
+
+        // 只取消**生产端**。消费端要收到 .finished 才会复位状态、
+        // 并把已产出的前缀从库里取回来；直接取消消费端会让 isStreaming
+        // 永远停在 true——输入条卡死，再也发不出消息。
+        Task { await orchestrator.cancel(in: sessionID) }
+
+        // 兜底：生产端若卡住不回 .finished，3 秒后强制复位。
+        // 带上回合序号：这 3 秒里用户可能已经开了新回合，那就不该再动界面。
+        let token = turnCounter
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            guard let self, self.isStreaming, self.turnCounter == token else { return }
+            self.isStreaming = false
+            self.isThinking = false
+            self.isSearching = false
+            self.streamingText = ""
+            self.streamingReasoning = ""
+            self.pending = ""
+            await self.reload()
+        }
     }
 
     private func consume(_ update: TurnUpdate) async {
@@ -388,7 +424,11 @@ final class ChatViewModel {
             isThinking = false
             streamingText = ""
             streamingReasoning = ""
-            messages = result.projection.messages
+            // 落库失败时投影可能是空的，直接覆盖会让整段对话从界面上消失
+            // （数据还在库里）。这时保留现有消息，等下次加载再对齐。
+            if !result.projection.messages.isEmpty || messages.isEmpty {
+                messages = result.projection.messages
+            }
             lastTurnUsage = result.usage
             lastTurnCost = result.usage.flatMap {
                 PriceTable.estimate($0, model: lastModel).amountUSD
@@ -450,9 +490,13 @@ final class ChatViewModel {
             return true
         } catch let failure as LlmFailure {
             lastError = Self.describe(failure)
+            // 提示词已经落库但界面没刷新，会出现"看不见的孤儿消息"——
+            // 用户重打一遍就会多出一条，切会话时才暴露。
+            await reload()
             return false
         } catch {
             lastError = "生成失败：\(error)"
+            await reload()
             return false
         }
     }
@@ -467,6 +511,13 @@ final class ChatViewModel {
         case .network: "网络连接失败"
         case .contentFilter: "内容被安全策略拦截"
         case .cancelled: "已取消"
+        case .invalidRequest: "请求参数被拒绝"
+        case .invalidCredential: "密钥无效或已过期"
+        case .emptyResponse: "模型没有返回内容"
+        case .imageTooLarge: "图片过大"
+        case .unsupportedCapability: "该模型不支持这个功能"
+        case .decodeFailed: "响应格式无法解析"
+        case .server: "厂商服务异常"
         default: failure.message
         }
     }

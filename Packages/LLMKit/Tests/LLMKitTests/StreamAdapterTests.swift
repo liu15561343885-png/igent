@@ -139,3 +139,63 @@ final class StreamAdapterTests: XCTestCase {
         XCTAssertEqual(b.blocks.last, .text("你好，世界"))
     }
 }
+
+final class EmptyStreamTests: XCTestCase {
+    /// 200 + 非 SSE 内容（比如代理返回 HTML）时，必须报错而不是"正常结束但零内容"。
+    func testEmptyStreamIsReportedAsError() {
+        var parser = OpenAIStreamParser()
+        var chunks = parser.feed(Data("<html>gateway error</html>".utf8))
+        chunks += parser.finish()
+
+        let finishes = chunks.compactMap { chunk -> FinishReason? in
+            if case let .finish(reason, _) = chunk { reason } else { nil }
+        }
+        guard case let .error(failure)? = finishes.last else {
+            return XCTFail("空响应应当以错误结束，而不是 .stop")
+        }
+        XCTAssertEqual(failure.code, .emptyResponse)
+    }
+
+    /// 有内容但没有结束标记（连接被提前关闭）时保持宽容，按正常结束处理。
+    func testContentWithoutTerminalStaysStop() {
+        let sse = """
+        data: {"choices":[{"delta":{"content":"你好"},"index":0}]}
+
+        """
+        var parser = OpenAIStreamParser()
+        var chunks = parser.feed(Data(sse.utf8))
+        chunks += parser.finish()
+
+        let finishes = chunks.compactMap { chunk -> FinishReason? in
+            if case let .finish(reason, _) = chunk { reason } else { nil }
+        }
+        XCTAssertEqual(finishes.last, .stop)
+    }
+}
+
+final class FailureClassificationTests: XCTestCase {
+    /// 只认厂商的明确措辞。裸子串 "context" 会把"字段被拒"误判成超窗，
+    /// 而超窗会触发压缩——压缩是不可逆的。
+    func testGenericContextMentionIsNotOverflow() {
+        let failure = LlmFailure.from(status: 400, body: "invalid value for field context")
+        XCTAssertNotEqual(failure.code, .contextWindowExceeded)
+        XCTAssertEqual(failure.code, .invalidRequest)
+    }
+
+    func testKnownOverflowPhrasingIsOverflow() {
+        XCTAssertEqual(
+            LlmFailure.from(status: 400, body: "context_length_exceeded").code,
+            .contextWindowExceeded
+        )
+        XCTAssertEqual(
+            LlmFailure.from(status: 400, body: "prompt is too long: 300000 tokens").code,
+            .contextWindowExceeded
+        )
+    }
+
+    /// 参数错误不能被显示成"密钥无效"。
+    func testBadRequestIsNotCredentialError() {
+        let failure = LlmFailure.from(status: 400, body: "max_tokens is not supported")
+        XCTAssertEqual(failure.code, .invalidRequest)
+    }
+}

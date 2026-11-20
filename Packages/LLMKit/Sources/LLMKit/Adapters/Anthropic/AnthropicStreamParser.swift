@@ -21,6 +21,8 @@ public struct AnthropicStreamParser: Sendable {
     private var citationCounter = 0
     private var finishReason: FinishReason?
     private var didFinish = false
+    /// 是否产出过实质性内容。用来识别"连接正常但没有内容"的空响应。
+    private var sawContent = false
 
     public init() {}
 
@@ -29,6 +31,7 @@ public struct AnthropicStreamParser: Sendable {
         for event in decoder.feed(data) {
             chunks += handle(event)
         }
+        markContent(chunks)
         return chunks
     }
 
@@ -37,6 +40,7 @@ public struct AnthropicStreamParser: Sendable {
         for event in decoder.finish() {
             chunks += handle(event)
         }
+        markContent(chunks)
         chunks += terminal()
         return chunks
     }
@@ -196,6 +200,19 @@ public struct AnthropicStreamParser: Sendable {
         return [.finish(.error(failure), meta: meta())]
     }
 
+    private mutating func markContent(_ chunks: [StreamChunk]) {
+        for chunk in chunks {
+            switch chunk {
+            case let .textDelta(_, text), let .reasoningDelta(_, text):
+                if !text.isEmpty { sawContent = true }
+            case let .blockEnd(_, block):
+                if !block.plainText.isEmpty { sawContent = true }
+            default:
+                break
+            }
+        }
+    }
+
     private mutating func terminal() -> [StreamChunk] {
         guard !didFinish else { return [] }
         didFinish = true
@@ -203,7 +220,16 @@ public struct AnthropicStreamParser: Sendable {
         if let usage = usage() {
             chunks.append(.usage(usage))
         }
-        chunks.append(.finish(finishReason ?? .stop, meta: meta()))
+        if finishReason == nil, !sawContent {
+            // 200 + 一段 HTML、被代理截断、或服务端根本没按 SSE 回：
+            // 以前这里会报 .stop，用户看到的是"发出去了但没有任何回复"。
+            chunks.append(.finish(
+                .error(LlmFailure(message: "服务端返回了空响应", code: .emptyResponse)),
+                meta: meta()
+            ))
+        } else {
+            chunks.append(.finish(finishReason ?? .stop, meta: meta()))
+        }
         return chunks
     }
 

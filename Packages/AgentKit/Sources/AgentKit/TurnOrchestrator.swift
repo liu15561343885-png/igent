@@ -62,7 +62,14 @@ public actor TurnOrchestrator {
     private let store: SessionStore
     private let runtime: LlmRuntime
     private let compactor: CompactionService
-    private var activeTask: Task<Void, Never>?
+    /// 每个会话各自的在飞任务。
+    ///
+    /// 用单个 `activeTask` 会出两个问题：切换会话后旧回合结束会把新回合的槽位清空
+    /// （于是"停止"打在 nil 上、静默失效）；两个会话并行时也互相覆盖。
+    private var activeTasks: [SessionID: Task<Void, Never>] = [:]
+    /// 每个会话当前回合的令牌，防止旧回合的收尾清掉新回合的状态。
+    private var activeTokens: [SessionID: Int] = [:]
+    private var nextToken = 0
 
     /// 自动压缩策略。设为 nil 可关闭（手动压缩仍然可用）。
     private(set) var policy: CompactionPolicy?
@@ -78,7 +85,9 @@ public actor TurnOrchestrator {
         self.policy = policy
     }
 
-    public var isRunning: Bool { activeTask != nil }
+    public var isRunning: Bool { !activeTasks.isEmpty }
+
+    public func isRunning(in sessionID: SessionID) -> Bool { activeTasks[sessionID] != nil }
 
     /// 发起一个回合，返回实时更新流。
     ///
@@ -90,15 +99,23 @@ public actor TurnOrchestrator {
         configuration: Configuration
     ) -> AsyncStream<TurnUpdate> {
         AsyncStream { continuation in
+            // 同一会话重复发送时先掐掉上一回合，否则会有两个任务争同一个会话，
+            // 且只有最新的那个能被取消。
+            activeTasks[sessionID]?.cancel()
+            nextToken += 1
+            let token = nextToken
+            activeTokens[sessionID] = token
+
             let task = Task {
                 await self.run(
                     blocks,
                     sessionID: sessionID,
+                    token: token,
                     configuration: configuration,
                     continuation: continuation
                 )
             }
-            activeTask = task
+            activeTasks[sessionID] = task
             continuation.onTermination = { _ in task.cancel() }
         }
     }
@@ -112,7 +129,12 @@ public actor TurnOrchestrator {
     }
 
     public func cancel() {
-        activeTask?.cancel()
+        for task in activeTasks.values { task.cancel() }
+    }
+
+    /// 只取消某个会话的回合。切走会话时用这个，别误伤其他会话。
+    public func cancel(in sessionID: SessionID) {
+        activeTasks[sessionID]?.cancel()
     }
 
     // MARK: - 执行
@@ -120,11 +142,16 @@ public actor TurnOrchestrator {
     private func run(
         _ blocks: [ContentBlock],
         sessionID: SessionID,
+        token: Int,
         configuration: Configuration,
         continuation: AsyncStream<TurnUpdate>.Continuation
     ) async {
         defer {
-            activeTask = nil
+            // 只有仍然是"自己"这一回合时才清理，否则会把后开回合的槽位清空。
+            if activeTokens[sessionID] == token {
+                activeTasks[sessionID] = nil
+                activeTokens[sessionID] = nil
+            }
             continuation.finish()
         }
 

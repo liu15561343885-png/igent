@@ -144,7 +144,16 @@ final class AppEnvironment {
             activeModel = activeProfile?.defaultModel ?? ""
         }
         await reloadSkills()
-        await ensureSession()
+
+        // didSet 只在用户改开关时触发；启动时要把已存的值真正应用到编排器上。
+        await orchestrator.setPolicy(autoCompactionEnabled ? .default : nil)
+
+        // 没有任何厂商时不建会话：RootView 靠 "无会话且无厂商" 判定首次引导，
+        // 先建会话会让引导一闪而过。
+        if !profiles.isEmpty {
+            await ensureSession()
+        }
+        await pruneOrphanAttachments()
         #if DEBUG
         await seedDemoConversationIfRequested()
         #endif
@@ -196,7 +205,7 @@ final class AppEnvironment {
             let event: SessionEvent = role == .assistant
                 ? .assistantMessage(message, usage: nil, interrupted: false)
                 : .userMessage(message)
-            try? await store.append(event, to: session.id, surfaceOp: .append)
+            _ = try? await store.append(event, to: session.id, surfaceOp: .append)
         }
         // 一张带图的消息，用来验证视觉链路与气泡渲染。
         if let data = Self.demoImageData(),
@@ -207,14 +216,14 @@ final class AppEnvironment {
                 blocks: [.image(ref), .text("这张图里写了什么？")],
                 source: .user
             )
-            try? await store.append(.userMessage(question), to: session.id, surfaceOp: .append)
+            _ = try? await store.append(.userMessage(question), to: session.id, surfaceOp: .append)
 
             let answer = Message(
                 role: .assistant,
                 blocks: [.text("图上是一块青绿色背景，中间用白色粗体写着 **igent**。")],
                 source: .model(provider: "demo", model: "gpt-4o-mini", meta: nil)
             )
-            try? await store.append(
+            _ = try? await store.append(
                 .assistantMessage(answer, usage: nil, interrupted: false),
                 to: session.id,
                 surfaceOp: .append
@@ -250,8 +259,8 @@ final class AppEnvironment {
             ],
             source: .model(provider: "demo", model: "gpt-4o-mini", meta: nil)
         )
-        try? await store.append(.userMessage(researchAsk), to: session.id, surfaceOp: .append)
-        try? await store.append(
+        _ = try? await store.append(.userMessage(researchAsk), to: session.id, surfaceOp: .append)
+        _ = try? await store.append(
             .assistantMessage(researchAnswer, usage: nil, interrupted: false),
             to: session.id,
             surfaceOp: .append
@@ -274,8 +283,8 @@ final class AppEnvironment {
             blocks: [.text("这季度营收同比涨了 18%，增量主要来自海外市场。")],
             source: .model(provider: "demo", model: "gpt-4o-mini", meta: nil)
         )
-        try? await store.append(.userMessage(docAsk), to: session.id, surfaceOp: .append)
-        try? await store.append(
+        _ = try? await store.append(.userMessage(docAsk), to: session.id, surfaceOp: .append)
+        _ = try? await store.append(
             .assistantMessage(docAnswer, usage: nil, interrupted: false),
             to: session.id,
             surfaceOp: .append
@@ -334,6 +343,10 @@ final class AppEnvironment {
     }
 
     func open(session: SessionSummary) async {
+        if let previous = currentSession?.id, previous != session.id {
+            await orchestrator.cancel(in: previous)
+        }
+
         currentSession = session
         let model = ChatViewModel(
             sessionID: session.id,
@@ -346,8 +359,23 @@ final class AppEnvironment {
         chat = model
     }
 
+    /// 清理没有被任何会话引用的图片文件。
+    ///
+    /// 图片内容寻址、跨会话共享，删会话时无法就地判断"还有人用吗"，
+    /// 所以按引用集合反向清理；顺带收拾掉崩溃留下的半截文件。
+    /// 启动时也跑一次，覆盖上次异常退出的残留。
+    func pruneOrphanAttachments() async {
+        // 数据库没打开时（内存兜底）引用集合必然是空的，
+        // 此时清理等于把历史图片全部删掉——宁可这轮不清理。
+        guard bootError == nil else { return }
+        guard let paths = try? await store.referencedAttachmentPaths() else { return }
+        // 10 分钟宽限：选图后尚未发送、或正在生成的图片还没有事件引用。
+        _ = await attachments.prune(referenced: paths, minimumAge: 600)
+    }
+
     func delete(session: SessionSummary) async {
         try? await store.delete(session.id)
+        await pruneOrphanAttachments()
         if currentSession?.id == session.id {
             currentSession = nil
             chat = nil

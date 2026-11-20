@@ -37,7 +37,8 @@ final class SurfaceProjectionTests: XCTestCase {
         ]
         let projection = SurfaceProjection.build(from: records)
         XCTAssertEqual(projection.messages.map(\.visibleText), ["问", "新答"])
-        XCTAssertEqual(projection.messageSeqs, [0, 2])
+        // 替换节点接管被替换区间的起点 seq（1），保证 messageSeqs 单调递增。
+        XCTAssertEqual(projection.messageSeqs, [0, 1])
     }
 
     /// 压缩：一条摘要 replace 掉一段历史。
@@ -50,7 +51,7 @@ final class SurfaceProjectionTests: XCTestCase {
         ]
         let projection = SurfaceProjection.build(from: records)
         XCTAssertEqual(projection.messages.map(\.visibleText), ["[摘要]"])
-        XCTAssertEqual(projection.messageSeqs, [3])
+        XCTAssertEqual(projection.messageSeqs, [0], "摘要承接被遮蔽区间的起点 seq")
     }
 
     /// 日志里的旧事件仍在，只是被遮蔽；这保证可回滚。
@@ -117,6 +118,7 @@ extension SurfaceProjectionTests {
         ]
         let projection = SurfaceProjection.build(from: records)
         XCTAssertEqual(projection.messages.map(\.visibleText), ["摘要", "三"])
-        XCTAssertEqual(projection.messageSeqs, [3, 2])
+        // 摘要节点接管被替换区间的起点 seq（0），保证 messageSeqs 单调递增。
+        XCTAssertEqual(projection.messageSeqs, [0, 2])
     }
 }

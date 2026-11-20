@@ -205,3 +205,26 @@ final class RequestLogTests: XCTestCase {
         XCTAssertEqual(Set(traces.map(\.provider)), ["p2", "p3"])
     }
 }
+
+final class LogRedactionTests: XCTestCase {
+    /// 查询串里带密钥的厂商（AuthStyle.queryKey）不能把 key 显示在请求记录里。
+    func testQueryKeyIsRedacted() {
+        let url = URL(string: "https://api.test/v1/messages?key=sk-secret&alt=sse")!
+        let redacted = LoggingTransport.redactedURL(url)
+        XCTAssertFalse(redacted.contains("sk-secret"))
+        XCTAssertTrue(redacted.contains("alt=sse"), "非密钥参数要保留，方便排查")
+    }
+
+    func testPlainURLIsUntouched() {
+        let url = URL(string: "https://api.test/v1/messages")!
+        XCTAssertEqual(LoggingTransport.redactedURL(url), url.absoluteString)
+    }
+
+    /// 自定义鉴权头（数据驱动配置允许）也要脱敏。
+    func testCustomAuthHeaderIsRedacted() {
+        let headers = ["x-auth-token": "secret", "content-type": "application/json"]
+        let redacted = LoggingTransport.redacted(headers)
+        XCTAssertEqual(redacted["x-auth-token"], "••••")
+        XCTAssertEqual(redacted["content-type"], "application/json")
+    }
+}

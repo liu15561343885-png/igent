@@ -13,7 +13,7 @@ public actor SessionStore {
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
-    static let schemaVersion: Int32 = 1
+    static let schemaVersion: Int32 = 2
 
     public init(url: URL) throws {
         db = try Database(path: url.path)
@@ -91,6 +91,22 @@ public actor SessionStore {
                 throw StoreError.migration(from: version, message: String(describing: error))
             }
             version = 1
+        }
+
+        if version < 2 {
+            // 老库不会重跑 v1 的建表语句，所以新增索引必须单独占一个版本，
+            // 否则已安装的数据库永远拿不到它（而且没人会发现）。
+            do {
+                try db.transaction {
+                    try db.execute(
+                        "CREATE INDEX IF NOT EXISTS usage_session ON usage_log (session_id)"
+                    )
+                    try db.setUserVersion(2)
+                }
+            } catch {
+                throw StoreError.migration(from: version, message: String(describing: error))
+            }
+            version = 2
         }
     }
 
@@ -181,8 +197,45 @@ public actor SessionStore {
     public func delete(_ id: SessionID) throws {
         try db.transaction {
             try db.run("DELETE FROM event WHERE session_id = ?") { bind($0, 1, id.uuidString) }
+            // usage_log 没有外键约束，不显式删就会变成永远查不到的孤儿行。
+            try db.run("DELETE FROM usage_log WHERE session_id = ?") { bind($0, 1, id.uuidString) }
             try db.run("DELETE FROM session WHERE id = ?") { bind($0, 1, id.uuidString) }
         }
+    }
+
+    /// 所有事件里出现过的附件相对路径。
+    ///
+    /// 图片是内容寻址存储、多会话共享，所以删会话时**不能**直接删文件；
+    /// 正确的做法是事后按引用集合清理（见 `AttachmentStore.prune`）。
+    public func referencedAttachmentPaths() throws -> Set<String> {
+        let rows = try db.query("SELECT payload FROM event") { statement -> String? in
+            columnData(statement, 0).map { String(decoding: $0, as: UTF8.self) }
+        }
+        var paths = Set<String>()
+        for payload in rows {
+            guard let payload else { continue }
+            paths.formUnion(Self.relativePaths(in: payload))
+        }
+        return paths
+    }
+
+    /// 从事件 JSON 里抠出所有 `"relativePath":"..."` 的值。
+    ///
+    /// 用文本扫描而不是完整解码：事件类型很多，逐个解码既慢又容易因
+    /// 旧版本字段变动而整体失败；这里只关心一个字段的字符串值。
+    static func relativePaths(in payload: String) -> Set<String> {
+        var result = Set<String>()
+        let marker = "\"relativePath\":\""
+        var searchRange = payload.startIndex..<payload.endIndex
+        while let found = payload.range(of: marker, range: searchRange) {
+            let start = found.upperBound
+            guard let end = payload[start...].firstIndex(of: "\"") else { break }
+            // JSONEncoder 会把 `/` 转义成 `\/`，还原后再与磁盘路径比较。
+            let raw = String(payload[start..<end])
+            result.insert(raw.replacingOccurrences(of: "\\/", with: "/"))
+            searchRange = payload.index(after: end)..<payload.endIndex
+        }
+        return result
     }
 
     // MARK: - 事件

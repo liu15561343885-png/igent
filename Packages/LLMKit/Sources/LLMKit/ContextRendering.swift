@@ -4,7 +4,7 @@ import Foundation
 /// 检索证据的模型可见投影。两族共用，避免各写一份导致格式漂移。
 enum ContextRendering {
     static func render(_ evidence: ContextEvidence) -> String {
-        var lines = ["<context query=\"\(escape(evidence.query))\">", evidence.digest]
+        var lines = ["<context query=\"\(escape(evidence.query))\">", sanitize(evidence.digest)]
         if !evidence.sources.isEmpty {
             lines.append("")
             lines.append("来源：")

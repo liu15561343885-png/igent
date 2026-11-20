@@ -49,7 +49,10 @@ public struct SurfaceProjection: Sendable, Equatable {
                     // "最近几轮"之后，模型会先读新对话再读摘要。
                     let insertAt = nodes.firstIndex { $0.seq >= startSeq } ?? nodes.count
                     nodes.removeAll { $0.seq >= startSeq && $0.seq <= endSeq }
-                    nodes.insert((record.seq, message), at: min(insertAt, nodes.count))
+                    // 节点的 seq 取**区间起点**，不是新事件自己的 seq。
+                    // 否则 messageSeqs 会变成非单调（[3, 2]），下一次压缩算出的
+                    // start > end，replace 就什么也删不掉，摘要只会越堆越多。
+                    nodes.insert((startSeq, message), at: min(insertAt, nodes.count))
                 }
                 continue
             }

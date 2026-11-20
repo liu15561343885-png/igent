@@ -4,6 +4,77 @@ import LLMKit
 import XCTest
 @testable import StorageKit
 
+final class StorageHygieneTests: XCTestCase {
+    /// 删会话必须连带删掉用量行，否则 usage_log 只增不减。
+    func testDeletingSessionRemovesUsageRows() async throws {
+        let store = try SessionStore.inMemory()
+        let session = try await store.createSession()
+        try await store.logUsage(
+            sessionID: session.id, turn: 1, step: 1,
+            provider: "p", model: "m", purpose: nil,
+            usage: TokenUsage(uncachedInputTokens: 10, outputTokens: 5)
+        )
+        let before = try await store.totalUsage(for: session.id)
+        XCTAssertNotNil(before)
+
+        try await store.delete(session.id)
+        let after = try await store.totalUsage(for: session.id)
+        XCTAssertNil(after)
+    }
+
+    /// 附件是内容寻址、多会话共享，所以要先按引用集合判断再清理。
+    func testReferencedAttachmentPathsAreExtracted() async throws {
+        let store = try SessionStore.inMemory()
+        let session = try await store.createSession()
+        let ref = ImageAttachmentRef(
+            id: "abcdef", mediaType: "image/jpeg", byteCount: 3,
+            width: 1, height: 1, relativePath: "ab/abcdef.jpg"
+        )
+        let message = Message(role: .user, blocks: [.image(ref)], source: .user)
+        _ = try await store.append(.userMessage(message), to: session.id, surfaceOp: .append)
+
+        let paths = try await store.referencedAttachmentPaths()
+        XCTAssertTrue(paths.contains("ab/abcdef.jpg"))
+    }
+
+    /// 被引用的文件**绝不能**删。这条测试是防止把用户图片删光的回归护栏：
+    /// 枚举器会规范化 /var → /private/var，前缀算法一旦写错就会全删。
+    func testPruneKeepsReferencedFiles() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("attachments-\(UUID().uuidString)")
+        let attachments = try AttachmentStore(root: root)
+        let normalized = NormalizedImage(
+            data: Data([0xFF, 0xD8, 0xFF, 0x01]), mediaType: "image/jpeg", width: 1, height: 1
+        )
+        let ref = try await attachments.save(normalized)
+        let path = try XCTUnwrap(ref.relativePath)
+
+        let removed = await attachments.prune(referenced: [path])
+        XCTAssertEqual(removed, 0, "被引用的文件不应被回收")
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: root.appendingPathComponent(path).path
+        ))
+    }
+
+    /// 没被任何事件引用的文件应当被回收。
+    func testPruneRemovesUnreferencedFiles() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("attachments-\(UUID().uuidString)")
+        let attachments = try AttachmentStore(root: root)
+        let normalized = NormalizedImage(
+            data: Data([0xFF, 0xD8, 0xFF]), mediaType: "image/jpeg", width: 1, height: 1
+        )
+        let ref = try await attachments.save(normalized)
+        XCTAssertNotNil(ref.relativePath)
+
+        let removed = await attachments.prune(referenced: [])
+        XCTAssertEqual(removed, 1)
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: root.appendingPathComponent(ref.relativePath!).path
+        ))
+    }
+}
+
 final class SessionStoreTests: XCTestCase {
     private func store() throws -> SessionStore {
         try SessionStore.inMemory()
