@@ -43,14 +43,14 @@ public struct OpenAICompatibleAdapter: LlmAdapter {
     }
 
     func makeRequest(_ options: GenerateOptions) throws -> URLRequest {
-        guard let url = profile.chatURL else {
+        guard let url = profile.chatURL(for: options.model) else {
             throw AdapterError.invalidURL(profile.baseURL.absoluteString + profile.chatPath)
         }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        RequestAuth.apply(profile.auth, apiKey: apiKey, to: &request)
         for (key, value) in profile.extraHeaders {
             request.setValue(value, forHTTPHeaderField: key)
         }

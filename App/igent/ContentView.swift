@@ -5,16 +5,18 @@ import SwiftUI
 struct ContentView: View {
     @State private var coreProbe = "检测中…"
     @State private var llmProbe = "检测中…"
+    @State private var familyProbe = "检测中…"
 
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 20) {
                 row(title: "CoreKit", detail: coreProbe)
                 row(title: "LLMKit", detail: llmProbe)
+                row(title: "厂商", detail: familyProbe)
 
                 Spacer()
 
-                Text("P0 骨架：词汇 + 装配器 + SSE 解码器 + 两个协议族适配器")
+                Text("P0 骨架：词汇 + 装配器 + SSE 解码器 + 四族适配器（含 Azure 变体）")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }
@@ -25,6 +27,7 @@ struct ContentView: View {
         .task {
             coreProbe = Self.coreCheck()
             llmProbe = await Self.llmCheck()
+            familyProbe = Self.familyCheck()
         }
     }
 
@@ -101,6 +104,27 @@ struct ContentView: View {
         } catch {
             return "解析失败：\(error)"
         }
+    }
+}
+
+extension ContentView {
+    /// 实例化四族适配器 + Azure 变体，确认全部可构造、路由可解析。
+    static func familyCheck() -> String {
+        let adapters: [any LlmAdapter] = [
+            OpenAICompatibleAdapter(
+                profile: .openAICompatible(id: "openai", name: "OpenAI", baseURL: "https://api.openai.com/v1"),
+                apiKey: "demo"
+            ),
+            AnthropicAdapter(apiKey: "demo"),
+            GeminiAdapter(apiKey: "demo"),
+            OpenAIResponsesAdapter(apiKey: "demo"),
+            OpenAICompatibleAdapter(
+                profile: .azure(resource: "demo", deployment: "gpt-4o"),
+                apiKey: "demo"
+            )
+        ]
+        let names = adapters.map { $0.profile.name }
+        return "\(adapters.count) 个就绪：" + names.joined(separator: " · ")
     }
 }
 

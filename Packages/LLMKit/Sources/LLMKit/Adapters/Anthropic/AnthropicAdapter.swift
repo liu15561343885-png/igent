@@ -51,14 +51,14 @@ public struct AnthropicAdapter: LlmAdapter {
     }
 
     func makeRequest(_ options: GenerateOptions) throws -> URLRequest {
-        guard let url = profile.chatURL else {
+        guard let url = profile.chatURL(for: options.model) else {
             throw AdapterError.invalidURL(profile.baseURL.absoluteString + profile.chatPath)
         }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+        RequestAuth.apply(profile.auth, apiKey: apiKey, to: &request)
         request.setValue(apiVersion, forHTTPHeaderField: "anthropic-version")
         for (key, value) in profile.extraHeaders {
             request.setValue(value, forHTTPHeaderField: key)

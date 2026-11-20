@@ -104,12 +104,11 @@ igent/
 │  └─ TokenMeter/                Estimator, RequestMeasurement, RoutePricing
 ├─ LLM/
 │  ├─ LlmRuntime                 actor：注册表 + 路由 + 流式入口
-│  ├─ Adapters/
-│  │  ├─ OpenAICompatible/
+│  ├─ Adapters/                   四族；Azure 是 ProviderProfile 变体，不单开适配器
+│  │  ├─ OpenAICompatible/        含 Azure、DeepSeek、OpenRouter… 全部方言
 │  │  ├─ OpenAIResponses/
 │  │  ├─ Anthropic/
-│  │  ├─ Gemini/
-│  │  ├─ AzureOpenAI/
+│  │  └─ Gemini/
 │  ├─ Transport/                 SSEDecoder, HTTPTransport, RetryExecutor
 │  └─ Profiles/                  ProviderProfile, ProviderDirectory, ModelDiscovery
 ├─ Web/
@@ -368,6 +367,8 @@ public struct ModelDiscoveryRequest: Sendable {
 | finish 映射 | `stop`/`length`/`content_filter` | `stop`/`max_output_tokens` | `end_turn`/`max_tokens`/`refusal` | `STOP`/`MAX_TOKENS`/`SAFETY` |
 
 不接本机模型（Ollama / LM Studio）：全部走 HTTPS 云 API，因此 App 不需要本地网络权限，也不需要 ATS 的本地明文例外。
+
+**Azure 不单开适配器。** 它的报文与 OpenAI Chat Completions 完全同构，差异只有三处：部署名进路径（`/openai/deployments/{deployment}/chat/completions`）、`api-version` 进查询串、鉴权走 `api-key` 头。这三处都能用 `ProviderProfile` 表达（`chatPath` 支持 `{model}` 占位与 `?query`、`auth` 支持任意头名），所以它是配置而不是代码。有单测钉住"Azure 报文与 OpenAI 逐字段相同"。
 
 ### 5.6 BlockAssembler
 
@@ -879,7 +880,7 @@ public struct RetryPolicy: Sendable {
 
 **关键路径**：P0 的 `StreamChunk` 契约和 `BlockAssembler` 一旦定错，后面阶段全部返工。建议 P0 先写 fixture 再写适配器（测试先行）。
 
-**进度**（2026-11-20）：P0 完成 —— `CoreKit`（三份核心定义 + `BlockAssembler` + `SSEDecoder`，23 单测）+ `LLMKit`（OpenAI 兼容 / Anthropic 两族：请求构造、流解析、适配器，23 单测，含 golden 夹具与逐字节分片回放）；`igent.xcodeproj` 可构建，模拟器运行后两个包都通过运行时自检。尚未做：Gemini / Responses / Azure 三族、真实网络联调。
+**进度**（2026-11-20）：P0 完成 —— `CoreKit`（三份核心定义 + `BlockAssembler` + `SSEDecoder`，23 单测）+ `LLMKit`（**四族齐**：OpenAI 兼容 / Anthropic / Gemini / Responses，37 单测，含 golden 夹具、逐字节分片回放、四族横向一致性对比；Azure 作为 profile 变体覆盖）；`igent.xcodeproj` 可构建并在模拟器运行。尚未做：真实网络联调、`LlmRuntime` 注册表、其余 P1 内容。
 
 **P5 排在 P6 之前**：skill 依赖 `context/message` 与 surface 替换，这两样已在 P1 就位；而压缩（P6）需要把 skill 正文标记为 `ephemeral`，先有 skill 才好验证压缩是否正确丢弃。
 

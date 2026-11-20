@@ -30,12 +30,18 @@ extension LlmFailure {
             code = .auth
         case 429:
             code = .rateLimit
-        case 400, 413, 422 where lowercased.contains("context") || lowercased.contains("too long"):
-            code = .contextWindowExceeded
-        case 400, 422 where lowercased.contains("image"):
-            code = .imageTooLarge
         case 400..<500:
-            code = .invalidCredential
+            // 4xx 的语义只能靠报文判断，逐条分开写——`case a, b, c where x` 的 where
+            // 只作用于最后一个模式，会把「所有 400」都吞进条件分支。
+            if lowercased.contains("context") || lowercased.contains("too long") {
+                code = .contextWindowExceeded
+            } else if lowercased.contains("quota") || status == 402 {
+                code = .quota
+            } else if lowercased.contains("image") {
+                code = .imageTooLarge
+            } else {
+                code = .invalidCredential
+            }
         default:
             code = status >= 500 ? .server : .network
         }

@@ -62,6 +62,7 @@ public struct ProviderProfile: Sendable, Equatable, Hashable {
     /// 相对 `baseURL` 的对话路径，例如 `/chat/completions`。
     public var chatPath: String
     public var capabilities: Capabilities
+    public var auth: AuthStyle
     public var extraHeaders: [String: String]
 
     public init(
@@ -71,6 +72,7 @@ public struct ProviderProfile: Sendable, Equatable, Hashable {
         baseURL: URL,
         chatPath: String,
         capabilities: Capabilities = Capabilities(),
+        auth: AuthStyle = .bearer,
         extraHeaders: [String: String] = [:]
     ) {
         self.id = id
@@ -79,23 +81,36 @@ public struct ProviderProfile: Sendable, Equatable, Hashable {
         self.baseURL = baseURL
         self.chatPath = chatPath
         self.capabilities = capabilities
+        self.auth = auth
         self.extraHeaders = extraHeaders
     }
 
-    /// 拼出实际请求地址。
+    /// 拼出实际请求地址。`chatPath` 支持两个占位：
+    /// - `{model}`：把模型名嵌进路径（Gemini、Azure 部署名）
+    /// - `?query`：路径后附带的查询串（Gemini 的 `alt=sse`、Azure 的 `api-version`）
     ///
     /// 不能用 `URL(string:relativeTo:)`：`chatPath` 以 "/" 开头时它会按主机根解析，
     /// 把 baseURL 里的路径前缀（如 `/v1`、`/openai/deployments/x`）整个丢掉。
-    public var chatURL: URL? {
+    public func chatURL(for model: String) -> URL? {
         guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
             return nil
         }
         var basePath = components.path
         while basePath.hasSuffix("/") { basePath.removeLast() }
-        let suffix = chatPath.hasPrefix("/") ? chatPath : "/" + chatPath
+
+        let substituted = chatPath.replacingOccurrences(of: "{model}", with: model)
+        let pieces = substituted.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
+        var suffix = String(pieces[0])
+        if !suffix.hasPrefix("/") { suffix = "/" + suffix }
+
         components.path = basePath + suffix
+        if pieces.count > 1 {
+            components.query = String(pieces[1])
+        }
         return components.url
     }
+
+    public var chatURL: URL? { chatURL(for: "") }
 }
 
 public extension ProviderProfile {
@@ -115,6 +130,55 @@ public extension ProviderProfile {
         )
     }
 
+    static func openAIResponses(baseURL: String = "https://api.openai.com/v1") -> ProviderProfile {
+        ProviderProfile(
+            id: "openai-responses",
+            name: "OpenAI Responses",
+            family: .openAIResponses,
+            baseURL: URL(string: baseURL)!,
+            chatPath: "/responses",
+            capabilities: Capabilities(vision: true, reasoning: true, streamUsage: true, systemStyle: .topLevel)
+        )
+    }
+
+    /// Gemini 把模型名放在路径里，并用 `alt=sse` 打开流式。
+    static func gemini(baseURL: String = "https://generativelanguage.googleapis.com/v1beta") -> ProviderProfile {
+        ProviderProfile(
+            id: "gemini",
+            name: "Google Gemini",
+            family: .gemini,
+            baseURL: URL(string: baseURL)!,
+            chatPath: "/models/{model}:streamGenerateContent?alt=sse",
+            capabilities: Capabilities(
+                vision: true,
+                reasoning: true,
+                streamUsage: true,
+                systemStyle: .systemInstruction,
+                defaultMaxTokens: 8192
+            ),
+            auth: .apiKey(header: "x-goog-api-key")
+        )
+    }
+
+    /// Azure 的报文与 OpenAI Chat Completions **完全同构**，差异只有三处：
+    /// 部署名进路径、`api-version` 进查询串、鉴权走 `api-key` 头。
+    /// 因此它是配置而不是新适配器。
+    static func azure(
+        resource: String,
+        deployment: String,
+        apiVersion: String = "2024-10-21"
+    ) -> ProviderProfile {
+        ProviderProfile(
+            id: "azure-\(deployment)",
+            name: "Azure \(deployment)",
+            family: .openAICompatible,
+            baseURL: URL(string: "https://\(resource).openai.azure.com")!,
+            chatPath: "/openai/deployments/\(deployment)/chat/completions?api-version=\(apiVersion)",
+            capabilities: Capabilities(vision: true, streamUsage: true),
+            auth: .apiKey(header: "api-key")
+        )
+    }
+
     static func anthropic(baseURL: String = "https://api.anthropic.com/v1") -> ProviderProfile {
         ProviderProfile(
             id: "anthropic",
@@ -128,7 +192,8 @@ public extension ProviderProfile {
                 streamUsage: true,
                 systemStyle: .topLevel,
                 defaultMaxTokens: 4096
-            )
+            ),
+            auth: .apiKey(header: "x-api-key")
         )
     }
 }
