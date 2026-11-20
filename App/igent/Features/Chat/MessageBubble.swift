@@ -19,13 +19,29 @@ struct MessageBubble: View {
         return text.isEmpty ? nil : text
     }
 
-    /// 流式期间对超长文本降级为纯文本：每帧重新解析整段 Markdown 会卡。
+    /// 流式期间一律降级为纯文本。
+    ///
+    /// 每个增量都会重建 body，而 MarkdownView 每次渲染都要把整段重新解析一遍；
+    /// 30fps 下这就是每帧一次全量解析，是流式卡顿的主因。
+    /// 结束后再做一次完整的 Markdown 渲染，视觉上没有损失。
     private var usePlainText: Bool {
-        isUser || (isStreaming && body_.count > 3_000)
+        isUser || isStreaming
+    }
+
+    /// 流式期间显示的文本：去掉 Markdown 标记符，避免满屏裸露的 `**`。
+    /// 这是一次字符串替换，比整段重新解析便宜一个量级。
+    private var plainPreview: String {
+        guard isStreaming else { return body_ }
+        return body_
+            .replacingOccurrences(of: "**", with: "")
+            .replacingOccurrences(of: "__", with: "")
+            .replacingOccurrences(of: "`", with: "")
     }
 
     /// 带代码块的气泡放宽，否则横向滚动太窄。
+    /// 流式期间不解析：宽度会因此窄一点，但换来每帧少一次全量 Markdown 解析。
     private var maxWidthFraction: CGFloat {
+        guard !isStreaming else { return Theme.bubbleMaxWidth }
         let hasCode = MarkdownParser.parse(body_).contains { block in
             if case .code = block { true } else { false }
         }
@@ -176,7 +192,7 @@ struct MessageBubble: View {
                 }
 
                 if usePlainText {
-                    Text(body_)
+                    Text(plainPreview)
                         .font(.body)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)

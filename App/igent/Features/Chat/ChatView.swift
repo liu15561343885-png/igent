@@ -13,6 +13,7 @@ struct ChatView: View {
     @State private var stats: SessionStats?
     @State private var exportText = ""
     @State private var infoMessage: String?
+    @State private var isPinnedToBottom = true
     @State private var isWorking = false
 
     private var draftBinding: Binding<String> {
@@ -348,11 +349,16 @@ struct ChatView: View {
                             Label("思考中…", systemImage: "brain")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
-                            Text(model.streamingReasoning)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(8)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                            // 之前限 8 行，长思考链会被截断——用户看到的"显示不全"就是它。
+                            // 改成固定高度可滚动，既不撑爆屏幕也不丢内容。
+                            ScrollView {
+                                Text(model.streamingReasoning)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .textSelection(.enabled)
+                            }
+                            .frame(maxHeight: 200)
                         }
                         .padding(10)
                         .background(
@@ -386,6 +392,13 @@ struct ChatView: View {
                 .padding(.vertical, 12)
             }
             .scrollDismissesKeyboard(.interactively)
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                // 距底部 80pt 内算"贴在底部"；用户往上翻就脱离。
+                geometry.contentOffset.y + geometry.containerSize.height
+                    >= geometry.contentSize.height - 80
+            } action: { _, atBottom in
+                isPinnedToBottom = atBottom
+            }
             .onChange(of: model.messages.count) { scroll(proxy) }
             .onChange(of: model.streamingText) { scroll(proxy) }
             .onChange(of: model.isThinking) { scroll(proxy) }
@@ -490,6 +503,8 @@ struct ChatView: View {
     }
 
     private func scroll(_ proxy: ScrollViewProxy, animated: Bool = true) {
+        // 用户正在往上翻时不要抢：只在"贴在底部"时跟随。
+        guard isPinnedToBottom else { return }
         let action = { proxy.scrollTo(Anchor.bottom, anchor: .bottom) }
         if animated {
             withAnimation(.easeOut(duration: 0.2), action)

@@ -5,7 +5,19 @@ import Foundation
 public struct URLSessionTransport: StreamTransport {
     private let session: URLSession
 
-    public init(session: URLSession = .shared) {
+    /// 流式对话的默认会话。
+    ///
+    /// `.shared` 的请求超时是 60 秒，而这个超时管的是"等到首个字节"——
+    /// 推理模型常见 20–60 秒才出首字，正好卡在边界上，会被误报成网络中断。
+    /// 这里放宽到 180 秒；一旦开始出字节，超时会随每次接收重置。
+    public static let streaming: URLSession = {
+        let configuration = URLSessionConfiguration.default
+        configuration.timeoutIntervalForRequest = 180
+        configuration.timeoutIntervalForResource = 900
+        return URLSession(configuration: configuration)
+    }()
+
+    public init(session: URLSession = URLSessionTransport.streaming) {
         self.session = session
     }
 

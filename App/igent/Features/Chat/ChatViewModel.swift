@@ -95,7 +95,7 @@ final class ChatViewModel {
     private var streamTask: Task<Void, Never>?
 
     /// 流式刷新节流：约 30fps，避免每 token 重建整个列表。
-    private static let flushInterval: TimeInterval = 1.0 / 30.0
+    private static let flushInterval: TimeInterval = 1.0 / 45.0
     private var pending = ""
     private var lastFlush = Date.distantPast
     private var lastModel = ""
