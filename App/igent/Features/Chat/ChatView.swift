@@ -21,13 +21,22 @@ struct ChatView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            transcript
-            usageBar
-            composer
+        ZStack(alignment: .leading) {
+            VStack(spacing: 0) {
+                transcript
+                usageBar
+                composer
+            }
+            .background(GlassBackground())
+
+            if showSessions {
+                sessionDrawer
+            }
         }
-        .background(Color(.systemBackground))
+        .animation(.spring(response: 0.32, dampingFraction: 0.86), value: showSessions)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button { showSessions = true } label: {
@@ -77,9 +86,6 @@ struct ChatView: View {
         .sheet(isPresented: $showSettings) {
             ProviderSettingsView()
         }
-        .sheet(isPresented: $showSessions) {
-            SessionListView(currentSessionID: model.sessionID)
-        }
         .sheet(isPresented: $showStats) {
             statsSheet
         }
@@ -93,6 +99,14 @@ struct ChatView: View {
             Button("好") { infoMessage = nil }
         } message: {
             Text(infoMessage ?? "")
+        }
+        .task {
+            #if DEBUG
+            // 截图用：直接打开会话抽屉。
+            if ProcessInfo.processInfo.arguments.contains("-openSessions") {
+                showSessions = true
+            }
+            #endif
         }
         .task(id: model.messages.count) {
             // 首轮结束后自动起标题；已经在用自定义标题时是空操作。
@@ -500,6 +514,56 @@ struct ChatView: View {
         } else {
             action()
         }
+    }
+
+    /// 左侧滑出的会话抽屉。
+    ///
+    /// 之前是 `.sheet`，从底部弹上来；用户希望贴着左边滑出，像侧边栏。
+    /// 这里用 ZStack + move(edge: .leading) 过渡，另外支持左滑关闭。
+    private var sessionDrawer: some View {
+        ZStack(alignment: .leading) {
+            Color.black.opacity(0.22)
+                .ignoresSafeArea()
+                .transition(.opacity)
+                .onTapGesture { showSessions = false }
+
+            SessionListView(
+                currentSessionID: model.sessionID,
+                onClose: { showSessions = false }
+            )
+            .frame(width: 320)
+            .background(.regularMaterial)
+            .clipShape(
+                UnevenRoundedRectangle(
+                    topLeadingRadius: 0,
+                    bottomLeadingRadius: 0,
+                    bottomTrailingRadius: 24,
+                    topTrailingRadius: 24,
+                    style: .continuous
+                )
+            )
+            .overlay(alignment: .trailing) {
+                // 玻璃边缘的亮线，和抽屉融在一起
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            colors: [.white.opacity(0.5), .white.opacity(0.05)],
+                            startPoint: .top, endPoint: .bottom
+                        )
+                    )
+                    .frame(width: 1)
+                    .allowsHitTesting(false)
+            }
+            .shadow(color: .black.opacity(0.22), radius: 20, x: 8, y: 0)
+            .transition(.move(edge: .leading))
+            .gesture(
+                DragGesture(minimumDistance: 12)
+                    .onEnded { value in
+                        if value.translation.width < -60 { showSessions = false }
+                    }
+            )
+        }
+        .zIndex(1)
     }
 
     private func scroll(_ proxy: ScrollViewProxy, animated: Bool = true) {

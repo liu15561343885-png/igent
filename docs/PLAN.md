@@ -690,6 +690,20 @@ GPT：基于这些事实写最终答案
 
 代价：插话会**消耗两次生成**（被打断的那次 + 重开的那次），被打断的 token 已经计费。
 
+### 8.1.9 视觉：玻璃感与会话抽屉
+
+**Liquid Glass 用不了**：`glassEffect` / `GlassEffectContainer` 需要 iOS 26 SDK。
+本机是 Xcode 16.4 + iOS 18.5 SDK，SDK 里没有这些符号，`if #available` 也编译不过；
+而且 macOS 26 / Xcode 26 不支持 Intel Mac。所以：
+
+- `UI/GlassSurface.swift` 用「系统材质 + 渐变描边 + 上缘高光」近似玻璃观感；
+- **实现只有一个文件**，将来换到 Xcode 26 时替换成 `.glassEffect()` 即可，调用点不动；
+- 对话页背景改为淡渐变——纯色底上玻璃没有层次可透。
+
+**会话管理改为左侧抽屉**：`.sheet` 是从底部弹，用户要的是侧边栏。
+ZStack + `move(edge: .leading)` + 遮罩点击关闭 + 左滑关闭。
+抽屉不跨安全区（跨了标题栏会被导航栏盖住），标题栏自己画，不套 NavigationStack。
+
 ### 8.2 两条路径统一成 `context/message`
 
 | 路径 | 做法 |
@@ -1189,7 +1203,7 @@ public struct RetryPolicy: Sendable {
 
 **关键路径**：P0 的 `StreamChunk` 契约和 `BlockAssembler` 一旦定错，后面阶段全部返工。建议 P0 先写 fixture 再写适配器（测试先行）。
 
-**进度**（2026-11-20）：功能全部落地；真机联调已验证 对话/思考强度/检索/生图/深度调研/插话/排队/PDF。审计两轮 + 联调修复共 20 项。**322 单测**，六个包全绿。
+**进度**（2026-11-20）：功能全部落地 + 真机联调通过；视觉改为玻璃感皮肤，会话管理改为左侧抽屉。**322 单测**，六个包全绿。
 
 **P5 排在 P6 之前**：skill 依赖 `context/message` 与 surface 替换，这两样已在 P1 就位；而压缩（P6）需要把 skill 正文标记为 `ephemeral`，先有 skill 才好验证压缩是否正确丢弃。
 

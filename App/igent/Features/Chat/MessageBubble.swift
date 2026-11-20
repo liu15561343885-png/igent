@@ -234,10 +234,19 @@ struct MessageBubble: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 9)
             .foregroundStyle(isUser ? Color.white : Color.primary)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous)
-                    .fill(isUser ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(Color.primary.opacity(0.08)))
-            )
+            .background {
+                let shape = RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous)
+                if isUser {
+                    shape.fill(Color.accentColor)
+                } else {
+                    // 助手气泡用材质：底下的渐变背景透上来，才是玻璃的观感。
+                    shape
+                        .fill(.ultraThinMaterial)
+                        .overlay {
+                            shape.strokeBorder(.white.opacity(0.20), lineWidth: 0.5)
+                        }
+                }
+            }
             .frame(
                 maxWidth: UIScreen.main.bounds.width * maxWidthFraction,
                 alignment: isUser ? .trailing : .leading
