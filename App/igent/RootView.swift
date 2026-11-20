@@ -86,15 +86,8 @@ struct RootView: View {
             )
             .frame(width: 312)
             .background(.regularMaterial)
-            .clipShape(
-                UnevenRoundedRectangle(
-                    topLeadingRadius: 0,
-                    bottomLeadingRadius: 0,
-                    bottomTrailingRadius: 16,
-                    topTrailingRadius: 16,
-                    style: .continuous
-                )
-            )
+            // 描边必须在裁剪**之前**画：放在 clipShape 之后的话它不受圆角约束，
+            // 会在右上/右下角戳出两条直线（截图里那个"显示 bug"）。
             .overlay(alignment: .trailing) {
                 Rectangle()
                     .fill(
@@ -106,6 +99,15 @@ struct RootView: View {
                     .frame(width: 1)
                     .allowsHitTesting(false)
             }
+            .clipShape(
+                UnevenRoundedRectangle(
+                    topLeadingRadius: 0,
+                    bottomLeadingRadius: 0,
+                    bottomTrailingRadius: 16,
+                    topTrailingRadius: 16,
+                    style: .continuous
+                )
+            )
             .shadow(color: .black.opacity(0.24), radius: 22, x: 8, y: 0)
             .ignoresSafeArea(edges: .vertical)
         }
