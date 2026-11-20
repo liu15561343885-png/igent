@@ -274,3 +274,74 @@ extension RequestBuilderTests {
         XCTAssertEqual(list.first?["content"]?.arrayValue?.count, 2)
     }
 }
+
+final class ReasoningEffortTests: XCTestCase {
+    private func options(_ effort: ReasoningEffort?, maxTokens: Int? = nil) -> GenerateOptions {
+        var options = GenerateOptions(
+            provider: "p",
+            model: "m",
+            messages: [Message(role: .user, blocks: [.text("hi")], source: .user)]
+        )
+        options.reasoning = effort
+        options.maxTokens = maxTokens
+        return options
+    }
+
+    private func capabilities(reasoning: Bool) -> Capabilities {
+        Capabilities(reasoning: reasoning)
+    }
+
+    func testOpenAISendsReasoningEffort() {
+        let profile = ProviderProfile.openAICompatible(
+            id: "p", name: "P", baseURL: "https://api.test/v1",
+            capabilities: capabilities(reasoning: true)
+        )
+        let body = OpenAIRequestBuilder(profile: profile).body(options(.high))
+        XCTAssertEqual(body.objectValue?["reasoning_effort"], .string("high"))
+    }
+
+    /// 普通模型收到 reasoning_effort 会直接 400，所以按能力声明开关。
+    func testOpenAIOmitsWhenNotSupported() {
+        let profile = ProviderProfile.openAICompatible(
+            id: "p", name: "P", baseURL: "https://api.test/v1",
+            capabilities: capabilities(reasoning: false)
+        )
+        XCTAssertNil(OpenAIRequestBuilder(profile: profile).body(options(.high)).objectValue?["reasoning_effort"])
+    }
+
+    func testResponsesSendsReasoningObject() {
+        let body = OpenAIResponsesRequestBuilder(profile: .openAIResponses()).body(options(.medium))
+        XCTAssertEqual(body.objectValue?["reasoning"]?.objectValue?["effort"], .string("medium"))
+    }
+
+    func testAnthropicSendsThinkingBudget() {
+        let body = AnthropicRequestBuilder(profile: .anthropic()).body(options(.high, maxTokens: 16_000))
+        let thinking = body.objectValue?["thinking"]?.objectValue
+        XCTAssertEqual(thinking?["type"], .string("enabled"))
+        XCTAssertEqual(thinking?["budget_tokens"], .number(8_192))
+    }
+
+    /// 预算必须小于 max_tokens，否则厂商拒绝。
+    func testAnthropicBudgetStaysBelowMaxTokens() {
+        let body = AnthropicRequestBuilder(profile: .anthropic()).body(options(.high, maxTokens: 2_000))
+        let budget = body.objectValue?["thinking"]?.objectValue?["budget_tokens"]?.numberValue ?? 0
+        XCTAssertLessThan(budget, 2_000)
+    }
+
+    func testGeminiSendsThinkingBudget() {
+        let body = GeminiRequestBuilder(profile: .gemini()).body(options(.low))
+        let budget = body.objectValue?["generationConfig"]?.objectValue?["thinkingConfig"]?
+            .objectValue?["thinkingBudget"]?.numberValue
+        XCTAssertEqual(budget, 1_024)
+    }
+
+    /// 未显式指定推理强度时，四族都不该凭空加思考参数。
+    func testNoReasoningMeansNoExtraFields() {
+        XCTAssertNil(OpenAIRequestBuilder(profile: .openAICompatible(
+            id: "p", name: "P", baseURL: "https://api.test/v1"
+        )).body(options(nil)).objectValue?["reasoning_effort"])
+        XCTAssertNil(AnthropicRequestBuilder(profile: .anthropic()).body(options(nil)).objectValue?["thinking"])
+        XCTAssertNil(GeminiRequestBuilder(profile: .gemini()).body(options(nil))
+            .objectValue?["generationConfig"]?.objectValue?["thinkingConfig"])
+    }
+}

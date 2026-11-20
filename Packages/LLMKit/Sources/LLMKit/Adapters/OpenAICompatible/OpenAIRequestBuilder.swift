@@ -51,6 +51,11 @@ public struct OpenAIRequestBuilder: Sendable {
         if let stop = options.stop, !stop.isEmpty {
             root["stop"] = .array(stop.map { .string($0) })
         }
+        // 推理强度：只有声明支持推理的厂商才发，普通模型收到这个字段会 400。
+        if let effort = options.reasoning, profile.capabilities.reasoning {
+            root["reasoning_effort"] = .string(effort.rawValue)
+        }
+
         for (key, value) in options.extras {
             root[key] = value
         }

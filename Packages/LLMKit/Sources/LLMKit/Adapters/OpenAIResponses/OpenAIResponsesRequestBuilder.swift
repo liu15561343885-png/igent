@@ -42,6 +42,10 @@ public struct OpenAIResponsesRequestBuilder: Sendable {
         if let maxTokens = options.maxTokens {
             root["max_output_tokens"] = .number(Double(maxTokens))
         }
+        if let effort = options.reasoning, profile.capabilities.reasoning {
+            root["reasoning"] = .object(["effort": .string(effort.rawValue)])
+        }
+
         for (key, value) in options.extras {
             root[key] = value
         }

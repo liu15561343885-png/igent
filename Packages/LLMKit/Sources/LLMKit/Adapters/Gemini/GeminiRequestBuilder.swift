@@ -79,6 +79,16 @@ public struct GeminiRequestBuilder: Sendable {
         if let stop = options.stop, !stop.isEmpty {
             config["stopSequences"] = .array(stop.map { .string($0) })
         }
+        if let effort = options.reasoning, profile.capabilities.reasoning {
+            // 0 表示关闭思考，-1 表示由模型自定。
+            let budget: Int = switch effort {
+            case .minimal: 0
+            case .low: 1_024
+            case .medium: 4_096
+            case .high: 8_192
+            }
+            config["thinkingConfig"] = .object(["thinkingBudget": .number(Double(budget))])
+        }
         if !config.isEmpty {
             root["generationConfig"] = .object(config)
         }

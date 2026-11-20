@@ -1174,7 +1174,7 @@ public struct RetryPolicy: Sendable {
 
 **关键路径**：P0 的 `StreamChunk` 契约和 `BlockAssembler` 一旦定错，后面阶段全部返工。建议 P0 先写 fixture 再写适配器（测试先行）。
 
-**进度**（2026-11-20）：功能全部落地 + 全量审计两轮（`docs/AUDIT.md`）+ 插话/排队。**309 单测**，六个包全绿，干净构建 0 警告。未做：图片异步 job、真实 Key 联调。
+**进度**（2026-11-20）：功能全部落地 + 全量审计两轮 + 插话/排队 + 推理强度映射。**316 单测**，六个包全绿，干净构建 0 警告。待做：真机联调（用户执行）。
 
 **P5 排在 P6 之前**：skill 依赖 `context/message` 与 surface 替换，这两样已在 P1 就位；而压缩（P6）需要把 skill 正文标记为 `ephemeral`，先有 skill 才好验证压缩是否正确丢弃。
 

@@ -94,6 +94,8 @@
 | 会话打开竞态（chat 与 currentSession 错位） | `await` 后校验会话仍是当前会话 |
 | 启动路径 `try!` 崩溃 | 附件存储改可选：存不了图仍能纯文本对话 |
 | 每次 body 求值读 3 次钥匙串 | 三个"是否可用"改为存储属性 + 配置变更时刷新 |
+| 三个 `*Revision` 计数器无人读取 | 删掉计数器，把 `imageSettings` / `searchMode` / `documentPurpose` 改成 `@Observable` 存储属性——观察能力本来就不该靠计数器补 |
+| `GenerateOptions.reasoning` 写了没人读 | 四族各自映射：Chat Completions `reasoning_effort`、Responses `reasoning.effort`、Anthropic `thinking.budget_tokens`、Gemini `thinkingConfig.thinkingBudget`；未声明推理能力时不发 |
 
 ## 二、未修复（有意留下，附理由）
 
@@ -102,7 +104,6 @@
 | 规划/调研/标题的用量不入库 | `SearchPlanner` / `WebResearch` / `TitleService` | 成本统计偏低。 |
 | 调研/OCR/生图不经请求日志 | `CapabilitySettings.swift:113` | 这些路径失败时检查器里看不到，与界面文案不符。 |
 | 搜索/OCR 共用一个钥匙串条目 | `CapabilitySettings.swift:29` | 切到 Tavily/Brave 会把 DeepSeek 的 Key 发过去。 |
-| 三个 `*Revision` 计数器无人读取 | `AppEnvironment.swift:50-55` | 写而不读，改设置后界面可能不刷新。 |
 
 ---
 
@@ -122,7 +123,7 @@
 
 ## 四、测试与覆盖
 
-- 全量：**309 单测**，六个目标全绿。
+- 全量：**316 单测**，六个目标全绿。
 - 干净构建：0 警告（修掉了 7 处 `try?` 未使用告警）。
 - 本轮新增回归测试：附件清理保留引用文件、连续两次压缩、空响应、错误分类、日志脱敏、`invalidRequest` 分支。
 - 仍无覆盖：Keychain（需真机）、迁移升级路径、真实网络。

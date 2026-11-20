@@ -33,16 +33,4 @@ enum DocumentParsingPurpose: String, CaseIterable, Identifiable {
 }
 
 extension AppEnvironment {
-    var documentPurpose: DocumentParsingPurpose {
-        get {
-            DocumentParsingPurpose(
-                rawValue: UserDefaults.standard.string(forKey: "documentPurpose") ?? ""
-            ) ?? .textRecognition
-        }
-        set {
-            UserDefaults.standard.set(newValue.rawValue, forKey: "documentPurpose")
-            documentPurposeRevision += 1
-            refreshCapabilityFlags()
-        }
-    }
 }

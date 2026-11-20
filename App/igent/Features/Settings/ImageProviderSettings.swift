@@ -28,28 +28,6 @@ private enum ImageSettingsKey {
 }
 
 extension AppEnvironment {
-    var imageSettings: ImageProviderSettings {
-        get {
-            let defaults = UserDefaults.standard
-            let family = defaults.string(forKey: ImageSettingsKey.family)
-                .flatMap(ProviderFamily.init(rawValue:)) ?? .openAICompatible
-            return ImageProviderSettings(
-                family: family,
-                baseURL: defaults.string(forKey: ImageSettingsKey.baseURL)
-                    ?? ImageProviderSettings.default.baseURL,
-                model: defaults.string(forKey: ImageSettingsKey.model)
-                    ?? ImageProviderSettings.default.model
-            )
-        }
-        set {
-            let defaults = UserDefaults.standard
-            defaults.set(newValue.family.rawValue, forKey: ImageSettingsKey.family)
-            defaults.set(newValue.baseURL, forKey: ImageSettingsKey.baseURL)
-            defaults.set(newValue.model, forKey: ImageSettingsKey.model)
-            imageProviderRevision += 1
-        }
-    }
-
     var imageAPIKey: String {
         keychain.get(Keychain.account(for: ImageSettingsKey.account)) ?? ""
     }
@@ -60,7 +38,6 @@ extension AppEnvironment {
         } else {
             try? keychain.set(value, for: Keychain.account(for: ImageSettingsKey.account))
         }
-        imageProviderRevision += 1
         refreshCapabilityFlags()
     }
 

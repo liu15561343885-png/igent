@@ -73,6 +73,16 @@ public struct AnthropicRequestBuilder: Sendable {
         if let stop = options.stop, !stop.isEmpty {
             root["stop_sequences"] = .array(stop.map { .string($0) })
         }
+        // Anthropic 的思考必须给预算，且要小于 max_tokens。
+        if let effort = options.reasoning, profile.capabilities.reasoning {
+            let ceiling = (options.maxTokens ?? profile.capabilities.defaultMaxTokens ?? 4096) - 512
+            let budget = max(1024, min(Self.thinkingBudget(effort), max(1024, ceiling)))
+            root["thinking"] = .object([
+                "type": .string("enabled"),
+                "budget_tokens": .number(Double(budget))
+            ])
+        }
+
         for (key, value) in options.extras {
             root[key] = value
         }
@@ -80,6 +90,16 @@ public struct AnthropicRequestBuilder: Sendable {
     }
 
     /// Anthropic 拒绝空 content 数组，因此没有可用块的 message 直接不发送。
+    /// 推理强度 → 思考预算（token）。
+    static func thinkingBudget(_ effort: ReasoningEffort) -> Int {
+        switch effort {
+        case .minimal: 1024
+        case .low: 2048
+        case .medium: 4096
+        case .high: 8192
+        }
+    }
+
     /// 允许原样回传给厂商的块类型。其余类型的 providerBlock 只用于界面展示。
     static let replayableBlockTypes: Set<String> = [
         "server_tool_use", "web_search_tool_result", "web_fetch_tool_result"

@@ -83,16 +83,6 @@ enum WebSearchMode: String, CaseIterable, Identifiable {
 }
 
 extension AppEnvironment {
-    var searchMode: WebSearchMode {
-        get {
-            WebSearchMode(rawValue: UserDefaults.standard.string(forKey: "webSearchMode") ?? "")
-                ?? .deepResearch
-        }
-        set {
-            UserDefaults.standard.set(newValue.rawValue, forKey: "webSearchMode")
-            searchModeRevision += 1
-        }
-    }
 
     /// 深度调研需要一个 DeepSeek 的 Anthropic 兼容端点 + 服务端工具。
     func makeWebResearch() -> WebResearch? {

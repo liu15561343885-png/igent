@@ -75,12 +75,31 @@ final class AppEnvironment {
         documentParsingReady = makeDocumentRecognizer() != nil
     }
 
-    /// 图片厂商配置变化时自增，方便界面刷新（配置存在 UserDefaults 里，不参与观察）。
-    var imageProviderRevision = 0
-    /// 检索方式变化时自增，同上。
-    var searchModeRevision = 0
-    /// 文档解析方式变化时自增，同上。
-    var documentPurposeRevision = 0
+    /// 以下三项是从 UserDefaults 搬进 @Observable 的。
+    ///
+    /// 以前它们是没有观察能力的计算属性 + 一个没人读的 `*Revision` 计数器：
+    /// 改了设置界面不会重绘，因为 SwiftUI 观察不到 UserDefaults。
+    /// 真正的修法是把它们变成存储属性，而不是加计数器。
+    var imageSettings: ImageProviderSettings {
+        didSet {
+            let defaults = UserDefaults.standard
+            defaults.set(imageSettings.family.rawValue, forKey: "imageProviderFamily")
+            defaults.set(imageSettings.baseURL, forKey: "imageProviderBaseURL")
+            defaults.set(imageSettings.model, forKey: "imageProviderModel")
+            refreshCapabilityFlags()
+        }
+    }
+
+    var searchMode: WebSearchMode {
+        didSet { UserDefaults.standard.set(searchMode.rawValue, forKey: "webSearchMode") }
+    }
+
+    var documentPurpose: DocumentParsingPurpose {
+        didSet {
+            UserDefaults.standard.set(documentPurpose.rawValue, forKey: "documentPurpose")
+            refreshCapabilityFlags()
+        }
+    }
 
     /// 是否显示思维链、检索动作等中间过程。
     var showInternals: Bool {
@@ -176,6 +195,21 @@ final class AppEnvironment {
         activeModel = UserDefaults.standard.string(forKey: "activeModel") ?? ""
         webSearchKind = UserDefaults.standard.string(forKey: "webSearchKind")
             ?? WebSearchKind.off.rawValue
+        let defaults = UserDefaults.standard
+        imageSettings = ImageProviderSettings(
+            family: defaults.string(forKey: "imageProviderFamily")
+                .flatMap(ProviderFamily.init(rawValue:)) ?? .openAICompatible,
+            baseURL: defaults.string(forKey: "imageProviderBaseURL")
+                ?? ImageProviderSettings.default.baseURL,
+            model: defaults.string(forKey: "imageProviderModel")
+                ?? ImageProviderSettings.default.model
+        )
+        searchMode = WebSearchMode(
+            rawValue: defaults.string(forKey: "webSearchMode") ?? ""
+        ) ?? .deepResearch
+        documentPurpose = DocumentParsingPurpose(
+            rawValue: defaults.string(forKey: "documentPurpose") ?? ""
+        ) ?? .textRecognition
     }
 
     private(set) var currentSession: SessionSummary?
