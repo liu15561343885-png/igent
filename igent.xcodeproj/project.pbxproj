@@ -6,12 +6,19 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		90F6405D30AFEBFB00398904 /* CoreKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000017 /* CoreKit */; };
+		90F6405E30AFEBFB00398904 /* LLMKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000019 /* LLMKit */; };
+		90F6405F30AFEBFB00398904 /* StorageKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000021 /* StorageKit */; };
+		90F6406030AFEBFB00398904 /* AgentKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000023 /* AgentKit */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		AA0000000000000000000005 /* igent.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = igent.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		AA0000000000000000000009 /* igent */ = {
+		AA0000000000000000000009 /* App/igent */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = App/igent;
 			sourceTree = "<group>";
@@ -23,6 +30,10 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				90F6406030AFEBFB00398904 /* AgentKit in Frameworks */,
+				90F6405F30AFEBFB00398904 /* StorageKit in Frameworks */,
+				90F6405E30AFEBFB00398904 /* LLMKit in Frameworks */,
+				90F6405D30AFEBFB00398904 /* CoreKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -32,7 +43,7 @@
 		AA0000000000000000000002 = {
 			isa = PBXGroup;
 			children = (
-				AA0000000000000000000009 /* igent */,
+				AA0000000000000000000009 /* App/igent */,
 				AA0000000000000000000003 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -61,7 +72,7 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				AA0000000000000000000009 /* igent */,
+				AA0000000000000000000009 /* App/igent */,
 			);
 			name = igent;
 			packageProductDependencies = (

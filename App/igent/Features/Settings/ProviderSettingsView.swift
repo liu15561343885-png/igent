@@ -7,6 +7,9 @@ struct ProviderSettingsView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var editing: ProviderDraft?
+    @State private var models: [ModelInfo] = []
+    @State private var isLoadingModels = false
+    @State private var modelError: String?
 
     var body: some View {
         NavigationStack {
@@ -61,10 +64,60 @@ struct ProviderSettingsView: View {
                         ))
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+
+                        Button {
+                            Task { await loadModels(for: active) }
+                        } label: {
+                            HStack {
+                                Label("从厂商拉取模型列表", systemImage: "arrow.down.circle")
+                                Spacer()
+                                if isLoadingModels {
+                                    ProgressView()
+                                }
+                            }
+                        }
+                        .disabled(isLoadingModels)
                     } header: {
                         Text("当前使用")
                     } footer: {
                         Text("对话将发往 \(active.name)。模型名按厂商文档填写，例如 gpt-4o-mini、claude-sonnet-4-5、gemini-2.5-flash。")
+                    }
+                }
+
+                if let modelError {
+                    Section {
+                        Text(modelError)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    }
+                }
+
+                if !models.isEmpty {
+                    Section("可用模型（\(models.count)）") {
+                        ForEach(models.prefix(40)) { model in
+                            Button {
+                                env.activeModel = model.id
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(model.id)
+                                            .foregroundStyle(.primary)
+                                            .lineLimit(1)
+                                        if let name = model.displayName, name != model.id {
+                                            Text(name)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                                .lineLimit(1)
+                                        }
+                                    }
+                                    Spacer()
+                                    if env.activeModel == model.id {
+                                        Image(systemName: "checkmark")
+                                            .foregroundStyle(.tint)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -74,6 +127,16 @@ struct ProviderSettingsView: View {
                     } label: {
                         Label("添加厂商", systemImage: "plus.circle.fill")
                     }
+                }
+
+                Section {
+                    NavigationLink {
+                        RequestInspectorView()
+                    } label: {
+                        Label("请求记录", systemImage: "waveform.path.ecg")
+                    }
+                } footer: {
+                    Text("每次请求的 URL、脱敏后的头、请求体与响应原文。连不上时先看这里。")
                 }
 
                 if let error = env.bootError {
@@ -262,6 +325,28 @@ struct ProviderEditorView: View {
             await env.save(profile: profile, apiKey: draft.apiKey)
             env.activeProfileID = profile.id
             dismiss()
+        }
+    }
+}
+
+
+extension ProviderSettingsView {
+    private func loadModels(for profile: ProviderProfile) async {
+        isLoadingModels = true
+        modelError = nil
+        defer { isLoadingModels = false }
+
+        do {
+            let key = env.apiKey(for: profile)
+            let fetched = try await ModelCatalog.list(profile: profile, apiKey: key)
+            models = fetched
+            if fetched.isEmpty {
+                modelError = "厂商返回了空列表。可能是密钥权限不足，或该端点不提供模型列表。"
+            }
+        } catch let failure as LlmFailure {
+            modelError = "\(failure.code.rawValue)：\(failure.message)"
+        } catch {
+            modelError = error.localizedDescription
         }
     }
 }

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(AppEnvironment.self) private var env
+    @State private var showDebugSettings = false
 
     var body: some View {
         NavigationStack {
@@ -17,6 +18,15 @@ struct RootView: View {
         }
         .task {
             await env.bootstrap()
+            #if DEBUG
+            // 仅用于模拟器截图：`-openSettings` 直接打开设置页。
+            if ProcessInfo.processInfo.arguments.contains("-openSettings") {
+                showDebugSettings = true
+            }
+            #endif
+        }
+        .sheet(isPresented: $showDebugSettings) {
+            ProviderSettingsView()
         }
     }
 

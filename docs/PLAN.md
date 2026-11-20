@@ -889,7 +889,7 @@ public struct RetryPolicy: Sendable {
 
 **关键路径**：P0 的 `StreamChunk` 契约和 `BlockAssembler` 一旦定错，后面阶段全部返工。建议 P0 先写 fixture 再写适配器（测试先行）。
 
-**进度**（2026-11-20）：P0 完成（四族适配器）。P1 基本完成 —— `LlmRuntime` 路由表、会话模型与表面投影、`StorageKit`（SQLite 事件日志 / 用量 / 厂商配置 / Keychain）、`TurnOrchestrator`（含取消与中断保留）、iMessage 风格聊天界面、厂商设置页。**累计 102 单测**。尚未做：真实 Key 联调、模型自动发现、请求检查器。
+**进度**（2026-11-20）：P0 完成（四族适配器）。P1 完成 —— 路由表、会话模型与表面投影、SQLite 事件日志、`TurnOrchestrator`、iMessage 风格界面、厂商设置、模型自动发现、请求检查器。**累计 115 单测**。真机运行说明见 `docs/RUN.md`。尚未做：真实 Key 联调、图片能力。
 
 **P5 排在 P6 之前**：skill 依赖 `context/message` 与 surface 替换，这两样已在 P1 就位；而压缩（P6）需要把 skill 正文标记为 `ephemeral`，先有 skill 才好验证压缩是否正确丢弃。
 

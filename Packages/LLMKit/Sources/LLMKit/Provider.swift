@@ -92,14 +92,18 @@ public struct ProviderProfile: Sendable, Codable, Equatable, Hashable {
     /// 不能用 `URL(string:relativeTo:)`：`chatPath` 以 "/" 开头时它会按主机根解析，
     /// 把 baseURL 里的路径前缀（如 `/v1`、`/openai/deployments/x`）整个丢掉。
     public func chatURL(for model: String) -> URL? {
+        url(forPath: chatPath.replacingOccurrences(of: "{model}", with: model))
+    }
+
+    /// 把任意相对路径拼到 baseURL 上。路径前缀（`/v1`、`/openai/deployments/x`）必须保留。
+    public func url(forPath path: String) -> URL? {
         guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
             return nil
         }
         var basePath = components.path
         while basePath.hasSuffix("/") { basePath.removeLast() }
 
-        let substituted = chatPath.replacingOccurrences(of: "{model}", with: model)
-        let pieces = substituted.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
+        let pieces = path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
         var suffix = String(pieces[0])
         if !suffix.hasPrefix("/") { suffix = "/" + suffix }
 

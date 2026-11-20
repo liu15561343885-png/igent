@@ -13,6 +13,8 @@ final class AppEnvironment {
     let runtime: LlmRuntime
     let orchestrator: TurnOrchestrator
     let keychain: Keychain
+    /// 所有厂商请求的旁路记录，供请求检查器展示。
+    let requestLog = RequestLog()
 
     private(set) var profiles: [ProviderProfile] = []
     private(set) var bootError: String?
@@ -153,7 +155,12 @@ final class AppEnvironment {
 
         for profile in profiles {
             let key = keychain.get(Keychain.account(for: profile.id)) ?? ""
-            let adapter = AdapterFactory.make(profile: profile, apiKey: key)
+            let transport = LoggingTransport(
+                upstream: URLSessionTransport(),
+                log: requestLog,
+                label: profile.name
+            )
+            let adapter = AdapterFactory.make(profile: profile, apiKey: key, transport: transport)
             if let registration = try? await runtime.register(providers: [profile.id], adapter: adapter) {
                 registrations.append(registration)
             }
