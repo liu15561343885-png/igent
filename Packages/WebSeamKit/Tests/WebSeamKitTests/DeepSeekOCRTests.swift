@@ -28,6 +28,18 @@ final class DeepSeekOCRTests: XCTestCase {
         XCTAssertTrue(text.contains("PDFBYTES"))
     }
 
+    /// 解析方式要如实写进 multipart，否则设置里的切换等于没生效。
+    func testRichLayoutPurposeIsSent() throws {
+        let request = DeepSeekOCRRecognizer.makeRequest(
+            data: Data("x".utf8),
+            filename: "财报.pdf",
+            purpose: .richLayoutRecognition,
+            apiKey: "k"
+        )
+        let text = String(decoding: try XCTUnwrap(request.httpBody), as: UTF8.self)
+        XCTAssertTrue(text.contains("rich_layout_recognition"))
+    }
+
     /// 识别期间服务端会发换行保活，响应体前面可能全是空行。
     func testParsesResponseWithLeadingNewlines() throws {
         let raw = "\n\n\n" + """
