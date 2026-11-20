@@ -12,7 +12,11 @@ struct RootView: View {
             navigationRoot
 
             if env.showSessionDrawer {
-                sessionDrawer
+                // 遮罩和面板必须是**兄弟**视图，各自带 transition。
+                // 之前包在一个 sessionDrawer 里，外层 `if` 插入的是容器本身，
+                // 用的是默认的淡入淡出——里面的 .move 从未生效。
+                drawerBackdrop
+                drawerPanel
             }
         }
         .animation(.spring(response: 0.32, dampingFraction: 0.86), value: env.showSessionDrawer)
@@ -64,13 +68,18 @@ struct RootView: View {
     ///
     /// 放在外壳层而不是页面里：只有这样才能盖住导航栏，
     /// 让抽屉的标题栏占住原本导航栏的位置。
-    private var sessionDrawer: some View {
-        ZStack(alignment: .leading) {
-            Color.black.opacity(0.22)
-                .ignoresSafeArea()
-                .transition(.opacity)
-                .onTapGesture { closeDrawer() }
+    private var drawerBackdrop: some View {
+        Color.black.opacity(0.22)
+            .ignoresSafeArea()
+            .contentShape(Rectangle())
+            .onTapGesture { closeDrawer() }
+            .transition(.opacity)
+            .zIndex(1)
+    }
 
+    /// 面板：从左侧滑入滑出，不做淡入淡出。
+    private var drawerPanel: some View {
+        ZStack(alignment: .leading) {
             SessionListView(
                 currentSessionID: env.chat?.sessionID ?? UUID(),
                 onClose: { closeDrawer() }
@@ -99,8 +108,9 @@ struct RootView: View {
             }
             .shadow(color: .black.opacity(0.24), radius: 22, x: 8, y: 0)
             .ignoresSafeArea(edges: .vertical)
-            .transition(.move(edge: .leading))
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .transition(.move(edge: .leading))
         .zIndex(2)
     }
 

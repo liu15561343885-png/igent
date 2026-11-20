@@ -224,18 +224,17 @@ private struct SessionCardRow: View {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             onDelete()
         } label: {
-            // 图标贴右边缘：居中的话滑到一半会被卡片切掉半个图标。
-            HStack(spacing: 0) {
-                Spacer(minLength: 0)
-                Image(systemName: "trash.fill")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .scaleEffect(0.6 + 0.4 * revealProgress)
-                    .opacity(Double(min(1, max(0, (revealProgress - 0.1) / 0.9))))
-                    .padding(.trailing, 22)
-            }
-            .frame(width: revealWidth)
-            .frame(maxHeight: .infinity)
+            // 图标居中于"当前露出的红色区域"。
+            // 88pt 容器里默认居中（距右缘 44pt），再按露出比例把它往右推到
+            // 露出条的中点：全露出时回到 44，刚露出时贴着右缘滑进来。
+            Image(systemName: "trash.fill")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(.white)
+                .scaleEffect(0.6 + 0.4 * revealProgress)
+                .opacity(Double(min(1, max(0, (revealProgress - 0.1) / 0.9))))
+                .offset(x: (revealWidth * (1 - revealProgress)) / 2)
+                .frame(width: revealWidth)
+                .frame(maxHeight: .infinity)
         }
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
