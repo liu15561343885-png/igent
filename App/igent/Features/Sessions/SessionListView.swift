@@ -96,12 +96,14 @@ struct SessionListView: View {
                                     close()
                                 }
                             },
-                            onDelete: {
-                                Task {
-                                    await env.delete(session: session)
-                                    await refresh()
-                                }
-                            }
+                            onDelete: { delete(session) }
+                        )
+                        // 移除时收缩+淡出，而不是整行瞬间消失。
+                        .transition(
+                            .asymmetric(
+                                insertion: .opacity,
+                                removal: .scale(scale: 0.88, anchor: .center).combined(with: .opacity)
+                            )
                         )
                     }
                 }
@@ -140,12 +142,22 @@ struct SessionListView: View {
         .buttonStyle(.plain)
     }
 
+    /// 先从本地数组移除（触发收缩动画），再异步落库。
+    /// 直接 `refresh()` 会让整行"啪"地消失，没有任何过渡。
+    private func delete(_ session: SessionSummary) {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+            sessions.removeAll { $0.id == session.id }
+        }
+        Task { await env.delete(session: session) }
+    }
+
     private func refresh() async {
         sessions = (try? await env.store.sessions()) ?? []
     }
 }
 
-/// 单个会话卡片。左滑露出删除，长按也能删。
+/// 单个会话卡片。左滑露出删除按钮，点它才真正删除；点卡片本体收回。
 private struct SessionCardRow: View {
     let session: SessionSummary
     let isCurrent: Bool
@@ -153,49 +165,46 @@ private struct SessionCardRow: View {
     let onDelete: () -> Void
 
     @State private var offset: CGFloat = 0
+    @State private var isOpen = false
+
+    private let revealWidth: CGFloat = 88
 
     var body: some View {
         ZStack(alignment: .trailing) {
-            // 卡片被拖开后露出的删除底
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.red.opacity(offset < -8 ? 0.9 : 0))
-                .overlay(alignment: .trailing) {
-                    Image(systemName: "trash")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .padding(.trailing, 18)
-                        .opacity(offset < -8 ? 1 : 0)
-                }
-
+            deleteButton
             card
                 .offset(x: offset)
-                .gesture(
-                    DragGesture(minimumDistance: 12)
-                        .onChanged { value in
-                            offset = min(0, value.translation.width)
-                        }
-                        .onEnded { value in
-                            if value.translation.width < -80 {
-                                withAnimation(.easeOut(duration: 0.18)) { offset = -400 }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.18, execute: onDelete)
-                            } else {
-                                withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
-                                    offset = 0
-                                }
-                            }
-                        }
-                )
+                .gesture(dragGesture)
                 .onTapGesture {
-                    if offset < -8 {
-                        withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) { offset = 0 }
-                    } else {
-                        onOpen()
-                    }
+                    if isOpen { closeReveal() } else { onOpen() }
                 }
                 .contextMenu {
-                    Button("删除", role: .destructive, action: onDelete)
+                    Button("删除", role: .destructive) {
+                        onDelete()
+                    }
                 }
         }
+    }
+
+    private var deleteButton: some View {
+        Button {
+            guard isOpen else { return }
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            onDelete()
+        } label: {
+            Image(systemName: "trash.fill")
+                .font(.subheadline)
+                .foregroundStyle(.white)
+                .frame(width: revealWidth)
+                .frame(maxHeight: .infinity)
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.red)
+        )
+        .opacity(offset < -2 ? 1 : 0)
+        .allowsHitTesting(isOpen)
+        .accessibilityLabel("删除会话")
     }
 
     private var card: some View {
@@ -233,5 +242,32 @@ private struct SessionCardRow: View {
                     lineWidth: 0.5
                 )
         )
+    }
+
+    private var dragGesture: some Gesture {
+        DragGesture(minimumDistance: 10)
+            .onChanged { value in
+                let base = isOpen ? -revealWidth : 0
+                offset = min(0, max(-revealWidth - 24, base + value.translation.width))
+            }
+            .onEnded { _ in
+                // 越过一半就吸附到"露出"状态，否则弹回——比"一滑到底直接删"可控得多。
+                if offset < -revealWidth * 0.55 {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                        offset = -revealWidth
+                        isOpen = true
+                    }
+                    UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+                } else {
+                    closeReveal()
+                }
+            }
+    }
+
+    private func closeReveal() {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) {
+            offset = 0
+            isOpen = false
+        }
     }
 }
