@@ -19,10 +19,15 @@ fi
 echo "==> 提交: $1"
 git commit -m "$1"
 
-echo "==> 拉取并变基"
-git pull --rebase --autostash origin main
+# 首次推送时远程还没有 main 分支，此时跳过拉取
+if git ls-remote --exit-code --heads origin main >/dev/null 2>&1; then
+  echo "==> 拉取并变基"
+  git pull --rebase --autostash origin main
+else
+  echo "==> 远程尚无 main 分支，跳过拉取"
+fi
 
 echo "==> 推送"
-git push origin main
+git push -u origin main
 
 echo "==> 完成: $(git log --oneline -1)"
