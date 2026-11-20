@@ -97,6 +97,13 @@ struct ChatView: View {
             // 首轮结束后自动起标题；已经在用自定义标题时是空操作。
             await env.generateTitleIfNeeded(sessionID: model.sessionID)
         }
+        .task(id: env.pendingAutoSend) {
+            // 仅用于模拟器联调：无法用脚本往输入框打字。
+            guard let text = env.pendingAutoSend else { return }
+            env.pendingAutoSend = nil
+            model.draft = text
+            send()
+        }
     }
 
     private var title: String {
@@ -269,6 +276,12 @@ struct ChatView: View {
             imageMode: model.imageMode,
             imageModel: env.imageSettings.model,
             imageAvailable: env.imageGenerationReady,
+            modelName: env.activeModel,
+            models: env.availableModels,
+            isLoadingModels: env.isLoadingModels,
+            modelError: env.modelFetchError,
+            onSelectModel: { env.activeModel = $0 },
+            onRefreshModels: { Task { await env.refreshModels() } },
             reasoningEnabled: env.activeProfile?.capabilities.reasoning ?? false,
             reasoning: env.reasoning,
             onSelectReasoning: { env.reasoning = $0 },

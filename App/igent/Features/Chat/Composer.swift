@@ -1,4 +1,5 @@
 import CoreKit
+import LLMKit
 import PhotosUI
 import SwiftUI
 
@@ -26,6 +27,13 @@ struct Composer: View {
     var imageMode: Bool
     var imageModel: String
     var imageAvailable: Bool
+
+    var modelName: String
+    var models: [ModelInfo]
+    var isLoadingModels: Bool
+    var modelError: String?
+    var onSelectModel: (String) -> Void
+    var onRefreshModels: () -> Void
 
     var reasoningEnabled: Bool
     var reasoning: ReasoningEffort?
@@ -56,6 +64,9 @@ struct Composer: View {
     @State private var showSkillPopover = false
     @State private var showFilePicker = false
     @State private var showReasoningPopover = false
+    @State private var showAttachDialog = false
+    @State private var showPhotoPicker = false
+    @State private var showModelPopover = false
 
     private var canSend: Bool {
         !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -343,8 +354,30 @@ struct Composer: View {
 
     private var modeRow: some View {
         HStack(spacing: 8) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 5) {
+                    modeChips
+                }
+                .padding(.trailing, 4)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 4)
+
+            attachmentButtons
+        }
+        .padding(.horizontal, 12)
+    }
+
+    /// 三个带状态的药丸。
+    @ViewBuilder
+    private var modeChips: some View {
+        Group {
+            // 模型放最前：它决定了后面几项是否可用，先看到它更顺。
+            modelChip
+
             modeChip(
-                title: "联网搜索",
+                title: "联网",
                 systemImage: "globe",
                 isOn: webSearchEnabled,
                 enabled: webSearchAvailable && !isStreaming,
@@ -352,7 +385,7 @@ struct Composer: View {
             )
 
             modeChip(
-                title: "生成图片",
+                title: "生图",
                 systemImage: "sparkles",
                 isOn: imageMode,
                 enabled: imageAvailable && !isStreaming,
@@ -366,54 +399,100 @@ struct Composer: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-            }
-
-            Spacer()
-
-            if allowsDocument && !isStreaming && !imageMode {
-                Button {
-                    showFilePicker = true
-                } label: {
-                    Image(systemName: "paperclip")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("添加文件")
-                .fileImporter(
-                    isPresented: $showFilePicker,
-                    allowedContentTypes: [.pdf, .plainText, .rtf, .data],
-                    allowsMultipleSelection: true
-                ) { result in
-                    if case let .success(urls) = result, !urls.isEmpty {
-                        onPickDocuments(urls)
-                    }
-                }
-            }
-
-            if allowsImage && !isStreaming && !imageMode {
-                PhotosPicker(selection: $pickerItem, matching: .images, photoLibrary: .shared()) {
-                    Image(systemName: "photo")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(.secondary)
-                }
-                .accessibilityLabel("添加图片")
-                .onChange(of: pickerItem) { _, item in
-                    guard let item else { return }
-                    Task {
-                        if let data = try? await item.loadTransferable(type: Data.self) {
-                            onPickImage(data)
-                        }
-                        pickerItem = nil
-                    }
-                }
+                    .fixedSize()
             }
         }
-        .padding(.horizontal, 14)
+    }
+
+    /// 右侧固定的两个附件入口。
+    @ViewBuilder
+    private var attachmentButtons: some View {
+        // 两个附件入口合成一个加号：模式行要塞下四个药丸，
+        // 拆成"文件 + 图片"两个图标就会把「思考」挤出屏幕。
+        Button {
+            showAttachDialog = true
+        } label: {
+            Image(systemName: "plus.circle")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+        .disabled(isStreaming || imageMode || (!allowsImage && !allowsDocument))
+        .opacity(isStreaming || imageMode ? 0.4 : 1)
+        .accessibilityLabel("添加附件")
+        .confirmationDialog("添加附件", isPresented: $showAttachDialog) {
+            if allowsImage {
+                Button("图片") { showPhotoPicker = true }
+            }
+            if allowsDocument {
+                Button("文件") { showFilePicker = true }
+            }
+            Button("取消", role: .cancel) {}
+        }
+        .photosPicker(isPresented: $showPhotoPicker, selection: $pickerItem, matching: .images)
+        .onChange(of: pickerItem) { _, item in
+            guard let item else { return }
+            Task {
+                if let data = try? await item.loadTransferable(type: Data.self) {
+                    onPickImage(data)
+                }
+                pickerItem = nil
+            }
+        }
+        .fileImporter(
+            isPresented: $showFilePicker,
+            allowedContentTypes: [.pdf, .plainText, .rtf, .data],
+            allowsMultipleSelection: true
+        ) { result in
+            if case let .success(urls) = result, !urls.isEmpty {
+                onPickDocuments(urls)
+            }
+        }
     }
 
     /// 模式开关做成药丸：选中态用强调色底，关掉时是可点的灰底——
     /// 比系统 Toggle 的细长开关更适合这条窄行。
+    /// 模型：点开是气泡，选完标签跟着变（与思考强度同一套交互）。
+    private var modelChip: some View {
+        Button {
+            showModelPopover.toggle()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "cpu")
+                Text(modelName.isEmpty ? "模型" : modelName)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .font(.caption)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 5)
+            .frame(maxWidth: 84)
+            .background(Capsule().fill(Color.primary.opacity(0.06)))
+            .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+        .disabled(isStreaming)
+        .opacity(isStreaming ? 0.45 : 1)
+        .accessibilityLabel("模型：\(modelName)")
+        .popover(isPresented: $showModelPopover, arrowEdge: .bottom) {
+            ModelPopover(
+                current: modelName,
+                models: models,
+                isLoading: isLoadingModels,
+                error: modelError,
+                onSelect: { name in
+                    onSelectModel(name)
+                    showModelPopover = false
+                },
+                onRefresh: onRefreshModels
+            )
+            .presentationCompactAdaptation(.popover)
+            .onAppear {
+                if models.isEmpty { onRefreshModels() }
+            }
+        }
+    }
+
     /// 思考强度：点开是气泡，选完标签跟着变。
     private var reasoningChip: some View {
         Button {
@@ -421,7 +500,9 @@ struct Composer: View {
         } label: {
             Label(reasoningTitle, systemImage: "brain")
                 .font(.caption)
-                .padding(.horizontal, 10)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .padding(.horizontal, 7)
                 .padding(.vertical, 5)
                 .background(
                     Capsule().fill(
@@ -465,7 +546,9 @@ struct Composer: View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
                 .font(.caption)
-                .padding(.horizontal, 10)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .padding(.horizontal, 7)
                 .padding(.vertical, 5)
                 .background(
                     Capsule().fill(
@@ -569,5 +652,94 @@ struct ReasoningPopover: View {
         }
         .padding(.vertical, 6)
         .frame(width: 220)
+    }
+}
+
+/// 模型选择气泡。
+struct ModelPopover: View {
+    let current: String
+    let models: [ModelInfo]
+    let isLoading: Bool
+    let error: String?
+    let onSelect: (String) -> Void
+    let onRefresh: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("模型")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button(action: onRefresh) {
+                    if isLoading {
+                        ProgressView().controlSize(.mini)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.caption2)
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(isLoading)
+                .accessibilityLabel("重新拉取模型列表")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+
+            Divider()
+
+            if let error {
+                Text(error)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            if models.isEmpty, !isLoading {
+                Text("还没有列表。点右上角刷新，或在设置里手填模型名。")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .padding(12)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 1) {
+                        // 当前模型即使不在列表里也要显示，否则用户看不出自己选了什么。
+                        ForEach(entries, id: \.self) { name in
+                            Button {
+                                onSelect(name)
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Text(name)
+                                        .font(.caption)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                    Spacer()
+                                    if name == current {
+                                        Image(systemName: "checkmark")
+                                            .font(.caption2)
+                                            .foregroundStyle(.tint)
+                                    }
+                                }
+                                .contentShape(Rectangle())
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .frame(maxHeight: 260)
+            }
+        }
+        .frame(width: 260)
+    }
+
+    private var entries: [String] {
+        var names = models.map(\.id)
+        if !current.isEmpty, !names.contains(current) {
+            names.insert(current, at: 0)
+        }
+        return names
     }
 }

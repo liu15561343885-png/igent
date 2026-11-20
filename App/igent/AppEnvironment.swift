@@ -37,6 +37,9 @@ final class AppEnvironment {
     var activeProfileID: String? {
         didSet {
             UserDefaults.standard.set(activeProfileID, forKey: "activeProfileID")
+            // 换厂商后旧列表不再有意义。
+            availableModels = []
+            modelFetchError = nil
             guard oldValue != activeProfileID,
                   let profile = profiles.first(where: { $0.id == activeProfileID })
             else { return }
@@ -104,6 +107,32 @@ final class AppEnvironment {
     /// 是否显示思维链、检索动作等中间过程。
     var showInternals: Bool {
         didSet { UserDefaults.standard.set(showInternals, forKey: "showInternals") }
+    }
+
+    /// DEBUG：启动后自动发送的一句话（模拟器无法用脚本输入）。
+    var pendingAutoSend: String?
+
+    /// 从厂商拉到的模型列表（内存缓存）。切换厂商时清空。
+    private(set) var availableModels: [ModelInfo] = []
+    private(set) var isLoadingModels = false
+    private(set) var modelFetchError: String?
+
+    /// 拉取当前厂商的模型列表。打开模型气泡时按需调用，不在启动时白花一次请求。
+    func refreshModels() async {
+        guard let profile = activeProfile, !isLoadingModels else { return }
+        isLoadingModels = true
+        defer { isLoadingModels = false }
+        do {
+            availableModels = try await ModelCatalog.list(
+                profile: profile,
+                apiKey: apiKey(for: profile)
+            )
+            modelFetchError = nil
+        } catch let failure as LlmFailure {
+            modelFetchError = "\(failure.code.rawValue)：\(failure.message)"
+        } catch {
+            modelFetchError = error.localizedDescription
+        }
     }
 
     /// 思考强度（持久化）。nil = 不指定，由厂商默认。
@@ -249,7 +278,26 @@ final class AppEnvironment {
         #if DEBUG
         await applyDevKeysIfRequested()
         await seedDemoConversationIfRequested()
-        if ProcessInfo.processInfo.arguments.contains("-interject") {
+        let args = ProcessInfo.processInfo.arguments
+        if let index = args.firstIndex(of: "-autoSend"), index + 1 < args.count {
+            pendingAutoSend = args[index + 1]
+        }
+        if args.contains("-autoSearch") {
+            chat?.webSearchEnabled = true
+        }
+        if args.contains("-autoImage") {
+            chat?.setImageMode(true)
+        }
+        // 模拟器应用能读宿主机绝对路径，方便联调附件链路。
+        if let index = args.firstIndex(of: "-autoDocument"), index + 1 < args.count,
+           let data = FileManager.default.contents(atPath: args[index + 1]) {
+            let name = URL(fileURLWithPath: args[index + 1]).lastPathComponent
+            chat?.attachDocument(name: name, data: data)
+        }
+        if let index = args.firstIndex(of: "-autoReasoning"), index + 1 < args.count {
+            reasoning = ReasoningEffort(rawValue: args[index + 1])
+        }
+        if args.contains("-interject") {
             streamingInput = .interject
             chat?.streamingInputMode = .interject
         }
