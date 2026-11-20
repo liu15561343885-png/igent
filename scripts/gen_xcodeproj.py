@@ -7,7 +7,7 @@
 """
 from pathlib import Path
 
-IDS = {n: f"AA{n:022d}" for n in range(1, 20)}
+IDS = {n: f"AA{n:022d}" for n in range(1, 24)}
 for n, v in IDS.items():
     assert len(v) == 24, (n, v, len(v))
 
@@ -177,6 +177,8 @@ pbxproj = f"""// !$*UTF8*$!
 			packageProductDependencies = (
 				{i(17)} /* CoreKit */,
 				{i(19)} /* LLMKit */,
+				{i(21)} /* StorageKit */,
+				{i(23)} /* AgentKit */,
 			);
 			productName = igent;
 			productReference = {i(5)} /* igent.app */;
@@ -209,6 +211,8 @@ pbxproj = f"""// !$*UTF8*$!
 			packageReferences = (
 				{i(16)} /* XCLocalSwiftPackageReference "Packages/CoreKit" */,
 				{i(18)} /* XCLocalSwiftPackageReference "Packages/LLMKit" */,
+				{i(20)} /* XCLocalSwiftPackageReference "Packages/StorageKit" */,
+				{i(22)} /* XCLocalSwiftPackageReference "Packages/AgentKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = {i(3)} /* Products */;
@@ -293,6 +297,14 @@ pbxproj = f"""// !$*UTF8*$!
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/LLMKit;
 		}};
+		{i(20)} /* XCLocalSwiftPackageReference "Packages/StorageKit" */ = {{
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/StorageKit;
+		}};
+		{i(22)} /* XCLocalSwiftPackageReference "Packages/AgentKit" */ = {{
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/AgentKit;
+		}};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -305,6 +317,16 @@ pbxproj = f"""// !$*UTF8*$!
 			isa = XCSwiftPackageProductDependency;
 			package = {i(18)} /* XCLocalSwiftPackageReference "Packages/LLMKit" */;
 			productName = LLMKit;
+		}};
+		{i(21)} /* StorageKit */ = {{
+			isa = XCSwiftPackageProductDependency;
+			package = {i(20)} /* XCLocalSwiftPackageReference "Packages/StorageKit" */;
+			productName = StorageKit;
+		}};
+		{i(23)} /* AgentKit */ = {{
+			isa = XCSwiftPackageProductDependency;
+			package = {i(22)} /* XCLocalSwiftPackageReference "Packages/AgentKit" */;
+			productName = AgentKit;
 		}};
 /* End XCSwiftPackageProductDependency section */
 	}};

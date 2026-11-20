@@ -844,6 +844,10 @@ public struct RetryPolicy: Sendable {
 ## 14. 流式渲染
 
 - `LlmRuntime.stream` → `AsyncThrowingStream` → ViewModel 合并到 `draft: AssistantDraft`。
+- **视觉基线：iMessage**（气泡无尾巴、连续圆角、成组间距、短对话贴底、材质输入条）。
+  本机 Xcode 16.4 只带 iOS 18.5 SDK，**无法使用 iOS 26/27 的 Liquid Glass 组件**，
+  暂用 iOS 18 等效手段：`.ultraThinMaterial`、`.defaultScrollAnchor(.bottom)`、
+  弹簧动画、`Color.primary.opacity(0.08)` 的自适应气泡底色。升级 SDK 后可再对齐。
 - 刷新节流：每 33ms 提交一次 UI 更新（约 30fps），用 `AsyncStream(bufferingPolicy: .bufferingNewest(1))` 做合并。
 - Markdown：块级解析缓存；只重解析"最后一个未闭合块"，已完成块直接复用已渲染视图。
 - 思维链：单独折叠区，默认收起，显示"已思考 12s · 1,842 tokens"。
@@ -885,7 +889,7 @@ public struct RetryPolicy: Sendable {
 
 **关键路径**：P0 的 `StreamChunk` 契约和 `BlockAssembler` 一旦定错，后面阶段全部返工。建议 P0 先写 fixture 再写适配器（测试先行）。
 
-**进度**（2026-11-20）：P0 完成（四族适配器，80 单测；见上）。P1 进行中 —— 已完成 `LlmRuntime`（路由表 + 原子替换，7 单测）、会话模型（`SessionEvent` / `SurfaceOp` / `SurfaceProjection`，8 单测）、`StorageKit`（SQLite 事件日志 + 投影 + 用量聚合 + 厂商配置 + Keychain，13 单测）。尚未做：编排器、聊天界面、设置页、真实网络联调。
+**进度**（2026-11-20）：P0 完成（四族适配器）。P1 基本完成 —— `LlmRuntime` 路由表、会话模型与表面投影、`StorageKit`（SQLite 事件日志 / 用量 / 厂商配置 / Keychain）、`TurnOrchestrator`（含取消与中断保留）、iMessage 风格聊天界面、厂商设置页。**累计 102 单测**。尚未做：真实 Key 联调、模型自动发现、请求检查器。
 
 **P5 排在 P6 之前**：skill 依赖 `context/message` 与 surface 替换，这两样已在 P1 就位；而压缩（P6）需要把 skill 正文标记为 `ephemeral`，先有 skill 才好验证压缩是否正确丢弃。
 

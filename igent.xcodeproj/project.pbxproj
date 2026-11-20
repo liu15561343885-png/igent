@@ -67,6 +67,8 @@
 			packageProductDependencies = (
 				AA0000000000000000000017 /* CoreKit */,
 				AA0000000000000000000019 /* LLMKit */,
+				AA0000000000000000000021 /* StorageKit */,
+				AA0000000000000000000023 /* AgentKit */,
 			);
 			productName = igent;
 			productReference = AA0000000000000000000005 /* igent.app */;
@@ -99,6 +101,8 @@
 			packageReferences = (
 				AA0000000000000000000016 /* XCLocalSwiftPackageReference "Packages/CoreKit" */,
 				AA0000000000000000000018 /* XCLocalSwiftPackageReference "Packages/LLMKit" */,
+				AA0000000000000000000020 /* XCLocalSwiftPackageReference "Packages/StorageKit" */,
+				AA0000000000000000000022 /* XCLocalSwiftPackageReference "Packages/AgentKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = AA0000000000000000000003 /* Products */;
@@ -265,6 +269,14 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/LLMKit;
 		};
+		AA0000000000000000000020 /* XCLocalSwiftPackageReference "Packages/StorageKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/StorageKit;
+		};
+		AA0000000000000000000022 /* XCLocalSwiftPackageReference "Packages/AgentKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/AgentKit;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -277,6 +289,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AA0000000000000000000018 /* XCLocalSwiftPackageReference "Packages/LLMKit" */;
 			productName = LLMKit;
+		};
+		AA0000000000000000000021 /* StorageKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA0000000000000000000020 /* XCLocalSwiftPackageReference "Packages/StorageKit" */;
+			productName = StorageKit;
+		};
+		AA0000000000000000000023 /* AgentKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA0000000000000000000022 /* XCLocalSwiftPackageReference "Packages/AgentKit" */;
+			productName = AgentKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
