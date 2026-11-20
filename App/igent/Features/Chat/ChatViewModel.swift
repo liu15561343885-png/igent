@@ -59,6 +59,8 @@ final class ChatViewModel {
     }
 
     var streamingInputMode: StreamingInputMode = .off
+    /// 思考强度。nil 表示不下发这个参数，交给厂商默认。
+    var reasoning: ReasoningEffort?
 
     var interjectEnabled: Bool { streamingInputMode == .interject }
     var queueEnabled: Bool { streamingInputMode == .queue }
@@ -314,6 +316,8 @@ final class ChatViewModel {
         // 不必为此新增内容块类型。代价是每轮 system 变化，前缀缓存会失效。
         var effective = configuration
         effective.system = SkillRenderer.system(skills)
+        // 界面选的思考强度优先于调用方给的默认值。
+        if let reasoning { effective.reasoning = reasoning }
 
         if interjected {
             // 插话不是新话题，是"改方向"。明说这一点，模型才不会把前半段当没发生过。

@@ -642,6 +642,21 @@ GPT：基于这些事实写最终答案
   但已解析的结果留在待发送列表里——重试时不会重复解析、重复计费。
 - 复用 DeepSeek 的检索 Key（OCR 是 DeepSeek 的工具接口）。
 
+### 8.1.6.1 思考强度
+
+模式行第三个药丸，点开是气泡，五档：关闭 / 最低 / 低 / 中 / 高。
+关闭（nil）表示**不下发**任何思考参数，交给厂商默认。
+
+| 协议族 | 字段 |
+|---|---|
+| Chat Completions | `reasoning_effort` |
+| Responses | `reasoning.effort` |
+| Anthropic | `thinking.budget_tokens`（封顶 max_tokens − 512） |
+| Gemini | `thinkingConfig.thinkingBudget` |
+
+`capabilities.reasoning` 的含义是"**允许界面提供这一项**"，不是"模型一定支持"——
+参数只在用户显式选档时才发，所以对 gpt-4o 这类模型也不会误伤。
+
 ### 8.1.7 生成中发送消息：插话 / 排队
 
 设置 → 交互 → 「生成中发送消息」，三选一：关闭 / 插话 / 排队。
@@ -1128,7 +1143,7 @@ public struct RetryPolicy: Sendable {
   暂用 iOS 18 等效手段：`.ultraThinMaterial`、`.defaultScrollAnchor(.bottom)`、
   弹簧动画、`Color.primary.opacity(0.08)` 的自适应气泡底色。升级 SDK 后可再对齐。
 - 刷新节流：每 33ms 提交一次 UI 更新（约 30fps），用 `AsyncStream(bufferingPolicy: .bufferingNewest(1))` 做合并。
-- **输入条分两层**：上面是输入行（skill 气泡 + 文本框 + 发送），下面是模式行（联网搜索 / 生成图片两个药丸开关）。
+- **输入条分两层**：上面是输入行（skill 气泡 + 文本框 + 发送），下面是模式行（联网搜索 / 生成图片 / 思考强度三个药丸；前两个是开关，第三个点开是气泡选档，选完标签跟着变）。
 - **用量气泡**：输入框上方一个可点的胶囊，展示本轮 token / 缓存命中率 / 上下文占用 / 估算成本。
   显示哪几项由设置决定，一项都不选时自动隐藏。点一下打开完整统计。
 - **思维链**：生成时以展开面板实时显示；回答结束后按「自动收起」设置决定折叠还是保持展开。
@@ -1174,7 +1189,7 @@ public struct RetryPolicy: Sendable {
 
 **关键路径**：P0 的 `StreamChunk` 契约和 `BlockAssembler` 一旦定错，后面阶段全部返工。建议 P0 先写 fixture 再写适配器（测试先行）。
 
-**进度**（2026-11-20）：功能全部落地 + 全量审计两轮 + 插话/排队 + 推理强度映射。**316 单测**，六个包全绿，干净构建 0 警告。待做：真机联调（用户执行）。
+**进度**（2026-11-20）：功能全部落地 + 全量审计两轮 + 插话/排队 + 思考强度（模式行气泡）。**316 单测**，六个包全绿，干净构建 0 警告。待做：真机联调（用户执行）。
 
 **P5 排在 P6 之前**：skill 依赖 `context/message` 与 surface 替换，这两样已在 P1 就位；而压缩（P6）需要把 skill 正文标记为 `ephemeral`，先有 skill 才好验证压缩是否正确丢弃。
 

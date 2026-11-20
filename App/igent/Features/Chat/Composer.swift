@@ -27,6 +27,10 @@ struct Composer: View {
     var imageModel: String
     var imageAvailable: Bool
 
+    var reasoningEnabled: Bool
+    var reasoning: ReasoningEffort?
+    var onSelectReasoning: (ReasoningEffort?) -> Void
+
     var skillSummaries: [SkillSummary]
     var pendingSkillName: String?
 
@@ -51,6 +55,7 @@ struct Composer: View {
     @State private var pickerItem: PhotosPickerItem?
     @State private var showSkillPopover = false
     @State private var showFilePicker = false
+    @State private var showReasoningPopover = false
 
     private var canSend: Bool {
         !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -354,6 +359,8 @@ struct Composer: View {
                 action: { onToggleImageMode(!imageMode) }
             )
 
+            reasoningChip
+
             if imageMode {
                 Text(imageModel)
                     .font(.caption2)
@@ -407,6 +414,47 @@ struct Composer: View {
 
     /// 模式开关做成药丸：选中态用强调色底，关掉时是可点的灰底——
     /// 比系统 Toggle 的细长开关更适合这条窄行。
+    /// 思考强度：点开是气泡，选完标签跟着变。
+    private var reasoningChip: some View {
+        Button {
+            showReasoningPopover.toggle()
+        } label: {
+            Label(reasoningTitle, systemImage: "brain")
+                .font(.caption)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(
+                    Capsule().fill(
+                        reasoning == nil
+                            ? Color.primary.opacity(0.06)
+                            : Color.accentColor.opacity(0.16)
+                    )
+                )
+                .foregroundStyle(reasoning == nil ? Color.secondary : Color.accentColor)
+        }
+        .buttonStyle(.plain)
+        .disabled(!reasoningEnabled || isStreaming)
+        .opacity(reasoningEnabled ? 1 : 0.45)
+        .accessibilityLabel("思考强度：\(reasoningTitle)")
+        .popover(isPresented: $showReasoningPopover, arrowEdge: .bottom) {
+            ReasoningPopover(selection: reasoning) { level in
+                onSelectReasoning(level)
+                showReasoningPopover = false
+            }
+            .presentationCompactAdaptation(.popover)
+        }
+    }
+
+    private var reasoningTitle: String {
+        guard let reasoning else { return "思考" }
+        switch reasoning {
+        case .minimal: return "思考·最低"
+        case .low: return "思考·低"
+        case .medium: return "思考·中"
+        case .high: return "思考·高"
+        }
+    }
+
     private func modeChip(
         title: String,
         systemImage: String,
@@ -474,5 +522,52 @@ struct SkillPopover: View {
         }
         .frame(width: 260)
         .frame(maxHeight: 320)
+    }
+}
+
+/// 思考强度选择气泡。
+struct ReasoningPopover: View {
+    let selection: ReasoningEffort?
+    let onSelect: (ReasoningEffort?) -> Void
+
+    private var levels: [(title: String, detail: String, value: ReasoningEffort?)] {
+        [
+            ("关闭", "不下发思考参数，由厂商默认", nil),
+            ("最低", "只做最少思考，最快", .minimal),
+            ("低", "简单问题够用", .low),
+            ("中", "默认档位", .medium),
+            ("高", "难题、需要多步推理", .high)
+        ]
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(Array(levels.enumerated()), id: \.offset) { _, level in
+                Button {
+                    onSelect(level.value)
+                } label: {
+                    HStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(level.title).font(.caption)
+                            Text(level.detail)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if selection == level.value {
+                            Image(systemName: "checkmark")
+                                .font(.caption2)
+                                .foregroundStyle(.tint)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.vertical, 6)
+        .frame(width: 220)
     }
 }

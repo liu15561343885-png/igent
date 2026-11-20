@@ -106,6 +106,14 @@ final class AppEnvironment {
         didSet { UserDefaults.standard.set(showInternals, forKey: "showInternals") }
     }
 
+    /// 思考强度（持久化）。nil = 不指定，由厂商默认。
+    var reasoning: ReasoningEffort? {
+        didSet {
+            UserDefaults.standard.set(reasoning?.rawValue, forKey: "reasoningEffort")
+            chat?.reasoning = reasoning
+        }
+    }
+
     /// 生成中发送消息的语义：关闭 / 插话 / 排队。两者互斥，由这里强制。
     var streamingInput: ChatViewModel.StreamingInputMode {
         didSet {
@@ -181,6 +189,8 @@ final class AppEnvironment {
 
         autoCompactionEnabled = UserDefaults.standard.object(forKey: "autoCompaction") as? Bool ?? true
         showInternals = UserDefaults.standard.object(forKey: "showInternals") as? Bool ?? true
+        reasoning = UserDefaults.standard.string(forKey: "reasoningEffort")
+            .flatMap(ReasoningEffort.init(rawValue:))
         streamingInput = ChatViewModel.StreamingInputMode(
             rawValue: UserDefaults.standard.string(forKey: "streamingInput") ?? ""
         ) ?? .off
@@ -273,7 +283,8 @@ final class AppEnvironment {
                 profile: ProviderProfile.openAICompatible(
                     id: "demo",
                     name: "Demo 厂商",
-                    baseURL: "https://api.openai.com/v1"
+                    baseURL: "https://api.openai.com/v1",
+                    capabilities: Capabilities(vision: true, reasoning: true, streamUsage: true)
                 ),
                 apiKey: "sk-demo"
             )
@@ -450,6 +461,7 @@ final class AppEnvironment {
             planner: planner
         )
         model.streamingInputMode = streamingInput
+        model.reasoning = reasoning
         await model.load()
         // await 期间用户可能已经切到别的会话；这时不能再覆盖 chat，
         // 否则界面显示的会话与 currentSession 会对不上（导出/统计会取错）。

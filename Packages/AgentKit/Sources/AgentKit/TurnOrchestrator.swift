@@ -39,6 +39,8 @@ public actor TurnOrchestrator {
         public var contextWindow: Int
         /// 本轮允许模型使用的服务端工具。非空表示"让模型自己决定要不要联网"。
         public var serverTools: [ServerToolRequest]
+        /// 思考强度。nil 表示不加参数，由厂商默认。
+        public var reasoning: ReasoningEffort?
 
         public init(
             provider: String,
@@ -47,7 +49,8 @@ public actor TurnOrchestrator {
             temperature: Double? = nil,
             maxTokens: Int? = nil,
             contextWindow: Int = 128_000,
-            serverTools: [ServerToolRequest] = []
+            serverTools: [ServerToolRequest] = [],
+            reasoning: ReasoningEffort? = nil
         ) {
             self.provider = provider
             self.model = model
@@ -56,6 +59,7 @@ public actor TurnOrchestrator {
             self.maxTokens = maxTokens
             self.contextWindow = contextWindow
             self.serverTools = serverTools
+            self.reasoning = reasoning
         }
     }
 
@@ -193,6 +197,7 @@ public actor TurnOrchestrator {
                     system: configuration.system,
                     temperature: configuration.temperature,
                     maxTokens: configuration.maxTokens,
+                    reasoning: configuration.reasoning,
                     serverTools: configuration.serverTools
                 )
 

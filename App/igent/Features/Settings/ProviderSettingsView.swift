@@ -471,8 +471,10 @@ struct ProviderDraft: Identifiable {
         case .openAICompatible:
             chatPath = "/chat/completions"
             auth = .bearer
+            // reasoning: true 只表示"允许界面提供思考强度"；
+            // 参数只在用户显式选择时才下发，所以对 gpt-4o 这类模型也是安全的。
             capabilities = Capabilities(
-                vision: true, streamUsage: true, contextWindow: 128_000
+                vision: true, reasoning: true, streamUsage: true, contextWindow: 128_000
             )
         case .openAIResponses:
             chatPath = "/responses"
