@@ -100,12 +100,6 @@ struct RootView: View {
             .shadow(color: .black.opacity(0.24), radius: 22, x: 8, y: 0)
             .ignoresSafeArea(edges: .vertical)
             .transition(.move(edge: .leading))
-            .gesture(
-                DragGesture(minimumDistance: 12)
-                    .onEnded { value in
-                        if value.translation.width < -60 { closeDrawer() }
-                    }
-            )
         }
         .zIndex(2)
     }

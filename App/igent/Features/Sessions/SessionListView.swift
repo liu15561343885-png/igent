@@ -10,6 +10,9 @@ struct SessionListView: View {
     var onClose: (() -> Void)?
 
     @State private var sessions: [SessionSummary] = []
+    /// 最近一次卡片拖拽的时间戳。卡片左滑是"露出删除"，
+    /// 不能让它的滑动顺带触发母级的"关闭抽屉"。
+    @State private var lastCardDragAt = Date.distantPast
 
     private static var topSafeInset: CGFloat {
         (UIApplication.shared.connectedScenes.first as? UIWindowScene)?
@@ -33,9 +36,27 @@ struct SessionListView: View {
     private var drawerBody: some View {
         VStack(spacing: 0) {
             header
+                .contentShape(Rectangle())
+                .simultaneousGesture(swipeToClose)
             cardList
         }
         .task { await refresh() }
+    }
+
+    /// 左滑关闭。
+    ///
+    /// 之前挂在抽屉容器上，被 ScrollView 的滚动手势吃掉了，所以"滑抽屉没反应"。
+    /// 现在挂到标题栏和滚动内容上：卡片自己的左滑删除优先，空白处滑动才关抽屉。
+    private var swipeToClose: some Gesture {
+        DragGesture(minimumDistance: 24)
+            .onEnded { value in
+                // 刚刚发生过卡片拖拽就让路：那一次滑动属于卡片。
+                guard Date().timeIntervalSince(lastCardDragAt) > 0.3 else { return }
+                let horizontal = abs(value.translation.width) > abs(value.translation.height)
+                if horizontal, value.translation.width < -50 {
+                    close()
+                }
+            }
     }
 
     private var sheetBody: some View {
@@ -96,7 +117,8 @@ struct SessionListView: View {
                                     close()
                                 }
                             },
-                            onDelete: { delete(session) }
+                            onDelete: { delete(session) },
+                            onDragBegan: { lastCardDragAt = Date() }
                         )
                         // 移除时收缩+淡出，而不是整行瞬间消失。
                         .transition(
@@ -110,6 +132,8 @@ struct SessionListView: View {
             }
             .padding(.horizontal, 14)
             .padding(.bottom, 24)
+            .contentShape(Rectangle())
+            .simultaneousGesture(swipeToClose)
         }
         .scrollIndicators(.hidden)
     }
@@ -163,6 +187,8 @@ private struct SessionCardRow: View {
     let isCurrent: Bool
     let onOpen: () -> Void
     let onDelete: () -> Void
+    /// 卡片开始被拖动时通知父级：让抽屉的关闭手势这次不要生效。
+    var onDragBegan: () -> Void = {}
 
     @State private var offset: CGFloat = 0
     @State private var isOpen = false
@@ -186,23 +212,35 @@ private struct SessionCardRow: View {
         }
     }
 
+    /// 滑动进度 0…1：红色底和图标都跟着它渐显，
+    /// 之前是 `offset < -2 ? 1 : 0` 的硬切换，看起来就像贴图突然出现。
+    private var revealProgress: CGFloat {
+        min(1, max(0, -offset / revealWidth))
+    }
+
     private var deleteButton: some View {
         Button {
             guard isOpen else { return }
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             onDelete()
         } label: {
-            Image(systemName: "trash.fill")
-                .font(.subheadline)
-                .foregroundStyle(.white)
-                .frame(width: revealWidth)
-                .frame(maxHeight: .infinity)
+            // 图标贴右边缘：居中的话滑到一半会被卡片切掉半个图标。
+            HStack(spacing: 0) {
+                Spacer(minLength: 0)
+                Image(systemName: "trash.fill")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .scaleEffect(0.6 + 0.4 * revealProgress)
+                    .opacity(Double(min(1, max(0, (revealProgress - 0.1) / 0.9))))
+                    .padding(.trailing, 22)
+            }
+            .frame(width: revealWidth)
+            .frame(maxHeight: .infinity)
         }
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(Color.red)
         )
-        .opacity(offset < -2 ? 1 : 0)
         .allowsHitTesting(isOpen)
         .accessibilityLabel("删除会话")
     }
@@ -227,14 +265,17 @@ private struct SessionCardRow: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(
-                    isCurrent
-                        ? AnyShapeStyle(Color.accentColor.opacity(0.14))
-                        : AnyShapeStyle(Color(.secondarySystemGroupedBackground))
-                )
-        )
+        .background {
+            // 必须是不透明的：卡片半透明时，底下那块红色删除底会透出来，
+            // 未滑动就能看到一条红边（已经踩过一次）。
+            ZStack {
+                Color(.secondarySystemGroupedBackground)
+                if isCurrent {
+                    Color.accentColor.opacity(0.14)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(
@@ -247,6 +288,7 @@ private struct SessionCardRow: View {
     private var dragGesture: some Gesture {
         DragGesture(minimumDistance: 10)
             .onChanged { value in
+                onDragBegan()
                 let base = isOpen ? -revealWidth : 0
                 offset = min(0, max(-revealWidth - 24, base + value.translation.width))
             }
