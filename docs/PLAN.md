@@ -539,6 +539,21 @@ public struct WebSource: Codable, Sendable, Identifiable {
 
 UI：正文里的 `[n]` 渲染为上标按钮，点开 `SFSafariViewController`；底部横向来源卡。
 
+**实现（WebSeamKit）**
+
+| 组件 | 说明 |
+|---|---|
+| `WebSearchProvider` | `Tavily`（带 answer 摘要）与 `Brave` 两实现 |
+| `WebFetchProvider` / `HTTPFetcher` | 12s 超时、2MB 上限、只收 text/html |
+| `HTMLTextExtractor` | 去脚本样式、块标签转换行、解码实体、收敛空白 |
+| `WebContextBuilder` | 检索 → 并发抓前 3 页 → 拼带编号的证据 |
+
+三条取舍写进了实现：
+
+1. **并发抓取但只抓 3 页**。再多首字延迟明显变差，收益递减。
+2. **单页失败不影响整体**：退回搜索摘要，来源列表仍保留（用户还能点开）。
+3. **搜索失败也产出证据对象**（内容写失败原因），不让整轮对话因此崩掉。
+
 ---
 
 ## 9. Skill：无工具激活
@@ -730,7 +745,20 @@ UI 在压缩点显示一条可展开的"已压缩 12 条历史（点击查看原
 解析时机放在**请求前异步批量**，不在序列化同步路径上做 base64——几 MB 的图编码会卡住调用方。
 能力门控：`vision == false` 时直接丢弃图片，而且**不去读盘**（有测试断言解析器零调用）。
 
-### 11.2 输出：生成（待实现）
+### 11.2 输出：生成（已实现 · 同步两族）
+
+| 族 | 端点 | 返回 |
+|---|---|---|
+| OpenAI Images | `POST /images/generations` | `b64_json` 或 `url`（都要处理，厂商不保证） |
+| Gemini Images | `POST /models/{model}:generateContent` + `responseModalities` | `inlineData` |
+
+**未做异步 job**（BFL / fal / Replicate 的 submit+poll）。原因：这几家的提交载荷、
+轮询地址、状态枚举各不相同，没有一份实测过的规格，硬写等于猜。要做的话需要
+`ImageJob` 表 + 前台轮询 + 冷启动续查，是独立的一块。
+
+两个实现细节：
+- `gpt-image-1` **不接受** `response_format`，请求体里不能出现它（有测试钉住）。
+- Gemini 只返回文字而不返回图（模型判定不该画）时，要当成空结果报错，而不是当成成功。
 
 ```swift
 public protocol ImageAdapter: Sendable {
@@ -907,7 +935,7 @@ public struct RetryPolicy: Sendable {
 
 **关键路径**：P0 的 `StreamChunk` 契约和 `BlockAssembler` 一旦定错，后面阶段全部返工。建议 P0 先写 fixture 再写适配器（测试先行）。
 
-**进度**（2026-11-20）：P0 四族适配器完成。P1 完成（路由表、事件日志、编排器、iMessage 界面、厂商设置、模型发现、请求检查器、Markdown 渲染）。P2 进行中 —— 图片**输入**链路已通（归一化、附件存储、四族图片字段、相册选取、气泡渲染）；图片**生成**待做。**累计 156 单测**。
+**进度**（2026-11-20）：P0 四族适配器；P1 会话与界面；P2 图片输入 + 图片生成（OpenAI Images / Gemini，同步两族）；P3 联网检索（Tavily / Brave + 抓取抽取 + 证据拼装）。**累计 180 单测**，五个包全绿。未做：图片生成的异步 job、skill、真实 Key 联调。
 
 **P5 排在 P6 之前**：skill 依赖 `context/message` 与 surface 替换，这两样已在 P1 就位；而压缩（P6）需要把 skill 正文标记为 `ephemeral`，先有 skill 才好验证压缩是否正确丢弃。
 

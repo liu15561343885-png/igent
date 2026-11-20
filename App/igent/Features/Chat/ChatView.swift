@@ -8,6 +8,7 @@ struct ChatView: View {
 
     @State private var showSettings = false
     @State private var showSessions = false
+    @State private var showImageGen = false
 
     private var draftBinding: Binding<String> {
         Binding(get: { model.draft }, set: { model.draft = $0 })
@@ -21,6 +22,10 @@ struct ChatView: View {
                 isStreaming: model.isStreaming,
                 pendingImage: model.pendingImage,
                 allowsImage: env.activeProfile?.capabilities.vision ?? false,
+                webSearchEnabled: model.webSearchEnabled,
+                webSearchAvailable: env.isWebSearchConfigured,
+                isSearching: model.isSearching,
+                onToggleWebSearch: { model.webSearchEnabled.toggle() },
                 onSend: send,
                 onStop: { model.stop() },
                 onPickImage: { data in
@@ -50,10 +55,21 @@ struct ChatView: View {
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showSettings = true } label: {
-                    Image(systemName: "slider.horizontal.3")
+                Menu {
+                    Button {
+                        showImageGen = true
+                    } label: {
+                        Label("生成图片", systemImage: "sparkles")
+                    }
+                    Button {
+                        showSettings = true
+                    } label: {
+                        Label("设置", systemImage: "slider.horizontal.3")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
                 }
-                .accessibilityLabel("设置")
+                .accessibilityLabel("更多")
             }
         }
         .sheet(isPresented: $showSettings) {
@@ -61,6 +77,9 @@ struct ChatView: View {
         }
         .sheet(isPresented: $showSessions) {
             SessionListView(currentSessionID: model.sessionID)
+        }
+        .sheet(isPresented: $showImageGen) {
+            ImageGenView(model: model)
         }
     }
 
@@ -146,7 +165,10 @@ struct ChatView: View {
             provider: profile.id,
             model: env.activeModel
         )
-        model.send(configuration: configuration)
+        model.send(
+            configuration: configuration,
+            webSearch: env.makeWebSearchProvider()
+        )
     }
 
     /// 优先滚到最后一条消息（懒加载容器里它一定被创建），兜底滚到哨兵。

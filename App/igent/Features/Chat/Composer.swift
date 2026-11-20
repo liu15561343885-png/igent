@@ -9,6 +9,11 @@ struct Composer: View {
     var pendingImage: ImageAttachmentRef?
     /// 当前模型是否支持视觉。不支持时不显示相册按钮，避免用户白传。
     var allowsImage: Bool
+    /// 联网检索开关状态与可用性。
+    var webSearchEnabled: Bool
+    var webSearchAvailable: Bool
+    var isSearching: Bool
+    var onToggleWebSearch: () -> Void
     var onSend: () -> Void
     var onStop: () -> Void
     var onPickImage: (Data) -> Void
@@ -40,7 +45,38 @@ struct Composer: View {
                 .padding(.top, 8)
             }
 
+            if isSearching {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.mini)
+                    Text("正在检索…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .transition(.opacity)
+            }
+
             HStack(alignment: .bottom, spacing: 10) {
+                if webSearchAvailable && !isStreaming {
+                    Button(action: onToggleWebSearch) {
+                        Image(systemName: "globe")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(webSearchEnabled ? Color.accentColor : .secondary)
+                            .frame(width: 32, height: 32)
+                            .background(
+                                Circle().fill(
+                                    webSearchEnabled
+                                        ? Color.accentColor.opacity(0.14)
+                                        : Color.clear
+                                )
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .animation(.easeOut(duration: 0.15), value: webSearchEnabled)
+                    .accessibilityLabel(webSearchEnabled ? "关闭联网检索" : "开启联网检索")
+                }
+
                 if allowsImage && !isStreaming {
                     PhotosPicker(selection: $pickerItem, matching: .images, photoLibrary: .shared()) {
                         Image(systemName: "photo")

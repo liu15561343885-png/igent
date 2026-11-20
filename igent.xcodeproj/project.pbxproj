@@ -6,19 +6,12 @@
 	objectVersion = 77;
 	objects = {
 
-/* Begin PBXBuildFile section */
-		90F6405D30AFEBFB00398904 /* CoreKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000017 /* CoreKit */; };
-		90F6405E30AFEBFB00398904 /* LLMKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000019 /* LLMKit */; };
-		90F6405F30AFEBFB00398904 /* StorageKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000021 /* StorageKit */; };
-		90F6406030AFEBFB00398904 /* AgentKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000023 /* AgentKit */; };
-/* End PBXBuildFile section */
-
 /* Begin PBXFileReference section */
 		AA0000000000000000000005 /* igent.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = igent.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		AA0000000000000000000009 /* App/igent */ = {
+		AA0000000000000000000009 /* igent */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = App/igent;
 			sourceTree = "<group>";
@@ -30,10 +23,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				90F6406030AFEBFB00398904 /* AgentKit in Frameworks */,
-				90F6405F30AFEBFB00398904 /* StorageKit in Frameworks */,
-				90F6405E30AFEBFB00398904 /* LLMKit in Frameworks */,
-				90F6405D30AFEBFB00398904 /* CoreKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -43,7 +32,7 @@
 		AA0000000000000000000002 = {
 			isa = PBXGroup;
 			children = (
-				AA0000000000000000000009 /* App/igent */,
+				AA0000000000000000000009 /* igent */,
 				AA0000000000000000000003 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -72,7 +61,7 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				AA0000000000000000000009 /* App/igent */,
+				AA0000000000000000000009 /* igent */,
 			);
 			name = igent;
 			packageProductDependencies = (
@@ -80,6 +69,7 @@
 				AA0000000000000000000019 /* LLMKit */,
 				AA0000000000000000000021 /* StorageKit */,
 				AA0000000000000000000023 /* AgentKit */,
+				AA0000000000000000000025 /* WebSeamKit */,
 			);
 			productName = igent;
 			productReference = AA0000000000000000000005 /* igent.app */;
@@ -114,6 +104,7 @@
 				AA0000000000000000000018 /* XCLocalSwiftPackageReference "Packages/LLMKit" */,
 				AA0000000000000000000020 /* XCLocalSwiftPackageReference "Packages/StorageKit" */,
 				AA0000000000000000000022 /* XCLocalSwiftPackageReference "Packages/AgentKit" */,
+				AA0000000000000000000024 /* XCLocalSwiftPackageReference "Packages/WebSeamKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = AA0000000000000000000003 /* Products */;
@@ -288,6 +279,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/AgentKit;
 		};
+		AA0000000000000000000024 /* XCLocalSwiftPackageReference "Packages/WebSeamKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/WebSeamKit;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -310,6 +305,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AA0000000000000000000022 /* XCLocalSwiftPackageReference "Packages/AgentKit" */;
 			productName = AgentKit;
+		};
+		AA0000000000000000000025 /* WebSeamKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA0000000000000000000024 /* XCLocalSwiftPackageReference "Packages/WebSeamKit" */;
+			productName = WebSeamKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

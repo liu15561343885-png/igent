@@ -5,6 +5,7 @@ import LLMKit
 import Observation
 import StorageKit
 import UIKit
+import WebSeamKit
 
 /// 应用级依赖装配。只在启动时创建一次。
 @MainActor
@@ -32,6 +33,15 @@ final class AppEnvironment {
         didSet { UserDefaults.standard.set(activeModel, forKey: "activeModel") }
     }
 
+    /// 界面需要观察的变化点，UserDefaults 本身不参与 SwiftUI 的依赖追踪。
+    var webSearchKind: String {
+        didSet { UserDefaults.standard.set(webSearchKind, forKey: "webSearchKind") }
+    }
+
+    var imageModel: String {
+        didSet { UserDefaults.standard.set(imageModel, forKey: "imageModel") }
+    }
+
     var activeProfile: ProviderProfile? {
         profiles.first { $0.id == activeProfileID }
     }
@@ -56,6 +66,9 @@ final class AppEnvironment {
 
         activeProfileID = UserDefaults.standard.string(forKey: "activeProfileID")
         activeModel = UserDefaults.standard.string(forKey: "activeModel") ?? ""
+        webSearchKind = UserDefaults.standard.string(forKey: "webSearchKind")
+            ?? WebSearchKind.off.rawValue
+        imageModel = UserDefaults.standard.string(forKey: "imageModel") ?? "gpt-image-1"
     }
 
     private(set) var currentSession: SessionSummary?
@@ -250,6 +263,19 @@ final class AppEnvironment {
         keychain.delete(Keychain.account(for: profile.id))
         if activeProfileID == profile.id { activeProfileID = nil }
         await reloadProviders()
+    }
+
+    /// 检索服务的密钥走单独账号，避免与其他配置混淆。
+    var apiKeyForWebSearch: String {
+        keychain.get(Keychain.account(for: "websearch")) ?? ""
+    }
+
+    func setWebSearchKey(_ value: String) {
+        if value.isEmpty {
+            keychain.delete(Keychain.account(for: "websearch"))
+        } else {
+            try? keychain.set(value, for: Keychain.account(for: "websearch"))
+        }
     }
 
     func apiKey(for profile: ProviderProfile) -> String {

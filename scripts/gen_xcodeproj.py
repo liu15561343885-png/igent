@@ -7,7 +7,7 @@
 """
 from pathlib import Path
 
-IDS = {n: f"AA{n:022d}" for n in range(1, 24)}
+IDS = {n: f"AA{n:022d}" for n in range(1, 26)}
 for n, v in IDS.items():
     assert len(v) == 24, (n, v, len(v))
 
@@ -179,6 +179,7 @@ pbxproj = f"""// !$*UTF8*$!
 				{i(19)} /* LLMKit */,
 				{i(21)} /* StorageKit */,
 				{i(23)} /* AgentKit */,
+				{i(25)} /* WebSeamKit */,
 			);
 			productName = igent;
 			productReference = {i(5)} /* igent.app */;
@@ -213,6 +214,7 @@ pbxproj = f"""// !$*UTF8*$!
 				{i(18)} /* XCLocalSwiftPackageReference "Packages/LLMKit" */,
 				{i(20)} /* XCLocalSwiftPackageReference "Packages/StorageKit" */,
 				{i(22)} /* XCLocalSwiftPackageReference "Packages/AgentKit" */,
+				{i(24)} /* XCLocalSwiftPackageReference "Packages/WebSeamKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = {i(3)} /* Products */;
@@ -305,6 +307,10 @@ pbxproj = f"""// !$*UTF8*$!
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/AgentKit;
 		}};
+		{i(24)} /* XCLocalSwiftPackageReference "Packages/WebSeamKit" */ = {{
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/WebSeamKit;
+		}};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -327,6 +333,11 @@ pbxproj = f"""// !$*UTF8*$!
 			isa = XCSwiftPackageProductDependency;
 			package = {i(22)} /* XCLocalSwiftPackageReference "Packages/AgentKit" */;
 			productName = AgentKit;
+		}};
+		{i(25)} /* WebSeamKit */ = {{
+			isa = XCSwiftPackageProductDependency;
+			package = {i(24)} /* XCLocalSwiftPackageReference "Packages/WebSeamKit" */;
+			productName = WebSeamKit;
 		}};
 /* End XCSwiftPackageProductDependency section */
 	}};

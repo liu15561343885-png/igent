@@ -1,8 +1,10 @@
 import AgentKit
 import CoreKit
 import Foundation
+import LLMKit
 import Observation
 import StorageKit
+import WebSeamKit
 
 /// 一个会话的界面状态与回合驱动。
 @MainActor
@@ -19,6 +21,9 @@ final class ChatViewModel {
     private(set) var lastError: String?
 
     var draft = ""
+    /// 本轮是否先联网检索。
+    var webSearchEnabled = false
+    private(set) var isSearching = false
     /// 待发送的图片（已归一化并落盘）。
     private(set) var pendingImage: ImageAttachmentRef?
 
@@ -67,7 +72,10 @@ final class ChatViewModel {
         }
     }
 
-    func send(configuration: TurnOrchestrator.Configuration) {
+    func send(
+        configuration: TurnOrchestrator.Configuration,
+        webSearch: (any WebSearchProvider)? = nil
+    ) {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let image = pendingImage
         guard !text.isEmpty || image != nil, !isStreaming else { return }
@@ -89,10 +97,28 @@ final class ChatViewModel {
         // 立刻把用户消息显示出来，不等落库往返。
         messages.append(Message(role: .user, blocks: blocks, source: .user))
 
+        let query = text.isEmpty ? "图片" : text
+        let useSearch = webSearchEnabled && webSearch != nil
+
         streamTask = Task { [weak self] in
             guard let self else { return }
+            var outgoing = blocks
+
+            // 先检索再问模型：证据作为 context 块随本轮一起发出，
+            // UI 上的用户气泡仍然只有文字/图片（context 不显示）。
+            if useSearch, let provider = webSearch {
+                self.isSearching = true
+                let outcome = await WebContextBuilder().build(
+                    query: query,
+                    search: provider,
+                    fetcher: HTTPFetcher()
+                )
+                self.isSearching = false
+                outgoing.append(.context(outcome.evidence))
+            }
+
             let stream = await self.orchestrator.send(
-                blocks,
+                outgoing,
                 in: self.sessionID,
                 configuration: configuration
             )
@@ -137,6 +163,59 @@ final class ChatViewModel {
                 lastError = Self.describe(failure)
             }
             streamTask = nil
+        }
+    }
+
+    // MARK: - 图片生成
+
+    /// 走独立的生成接口，不经过对话回合。
+    @discardableResult
+    func generateImage(
+        prompt: String,
+        adapter: any ImageGenerationAdapter,
+        model: String
+    ) async -> Bool {
+        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !isStreaming else { return false }
+        lastError = nil
+
+        do {
+            let ask = Message(role: .user, blocks: [.text("生成图片：\(trimmed)")], source: .user)
+            try await store.append(.userMessage(ask), to: sessionID, surfaceOp: .append)
+
+            let generated = try await adapter.generate(
+                ImageGenerationRequest(model: model, prompt: trimmed)
+            )
+
+            var refs: [ImageAttachmentRef] = []
+            for image in generated {
+                // 生成结果也走一遍归一化：不同厂商给的尺寸与格式都不统一。
+                let normalized = try ImageNormalizer.normalize(image.data)
+                refs.append(try await attachments.save(normalized))
+            }
+            guard !refs.isEmpty else { throw ImageGenerationError.emptyResponse }
+
+            var blocks: [ContentBlock] = refs.map { .image($0) }
+            blocks.append(.text("已生成 \(refs.count) 张图。"))
+
+            let answer = Message(
+                role: .assistant,
+                blocks: blocks,
+                source: .model(provider: "", model: model, meta: nil)
+            )
+            try await store.append(
+                .assistantMessage(answer, usage: nil, interrupted: false),
+                to: sessionID,
+                surfaceOp: .append
+            )
+            messages = try await store.projection(for: sessionID).messages
+            return true
+        } catch let failure as LlmFailure {
+            lastError = Self.describe(failure)
+            return false
+        } catch {
+            lastError = "生成失败：\(error)"
+            return false
         }
     }
 
