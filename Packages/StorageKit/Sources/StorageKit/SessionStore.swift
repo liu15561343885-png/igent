@@ -281,6 +281,21 @@ public actor SessionStore {
         }
     }
 
+    /// 最近一次调用的模型与用量。
+    ///
+    /// 连模型名一起返回：重开 App 后要按模型查价格表算成本，
+    /// 只知道 token 数不知道模型的话，成本只能显示为空。
+    public func latestUsage(for sessionID: SessionID) throws -> (model: String, usage: TokenUsage)? {
+        let decoder = self.decoder
+        let sql = "SELECT model, payload FROM usage_log WHERE session_id = ? ORDER BY id DESC LIMIT 1"
+        return try db.query(sql, { bind($0, 1, sessionID.uuidString) }) { statement -> (String, TokenUsage)? in
+            guard let payload = columnData(statement, 1),
+                  let usage = try? decoder.decode(TokenUsage.self, from: payload)
+            else { return nil }
+            return (columnText(statement, 0) ?? "", usage)
+        }.first ?? nil
+    }
+
     /// 某会话累计用量。
     public func totalUsage(for sessionID: SessionID) throws -> TokenUsage? {
         let decoder = self.decoder

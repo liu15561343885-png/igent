@@ -106,34 +106,66 @@ struct ChatView: View {
         return env.activeModel.isEmpty ? "未选择模型" : env.activeModel
     }
 
-    /// 最近一轮的用量与估算成本。成本算不出来时只显示 token。
+    /// 输入框上方：联网提示 + 可配置的用量气泡。
     @ViewBuilder
     private var usageBar: some View {
-        if model.searchSkipped {
-            HStack(spacing: 6) {
-                Image(systemName: "globe")
-                Text("模型判断本轮不需要联网")
-                Spacer()
+        if model.searchSkipped || !usageParts.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                if model.searchSkipped {
+                    Label("模型判断本轮不需要联网", systemImage: "globe")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+
+                if !usageParts.isEmpty {
+                    Button {
+                        Task { await loadStats() }
+                    } label: {
+                        Text(usageParts.joined(separator: "  ·  "))
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(Color.primary.opacity(0.06), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("用量统计")
+                }
             }
-            .font(.caption2)
-            .foregroundStyle(.tertiary)
             .padding(.horizontal, 16)
-            .padding(.bottom, 2)
+            .padding(.bottom, 4)
+        }
+    }
+
+    /// 按设置在气泡里选几项显示。任何一项取不到数据就不显示它，不显示 0。
+    private var usageParts: [String] {
+        guard env.showUsageBubble else { return [] }
+        var parts: [String] = []
+
+        if env.usageBubbleItems.contains(.tokens), let usage = model.lastTurnUsage {
+            parts.append("↑\(usage.billedInputTokens.compactTokenText) ↓\(usage.outputTokens.compactTokenText)")
         }
 
-        if let usage = model.lastTurnUsage {
-            HStack(spacing: 6) {
-                Text("本轮 ↑\(usage.billedInputTokens) ↓\(usage.outputTokens)")
-                if let cost = model.lastTurnCost {
-                    Text("· ≈$\(cost, format: .number.precision(.fractionLength(cost < 0.01 ? 4 : 3)))")
-                }
-                Spacer()
-            }
-            .font(.caption2)
-            .foregroundStyle(.tertiary)
-            .padding(.horizontal, 16)
-            .padding(.bottom, 2)
+        if env.usageBubbleItems.contains(.cacheHit),
+           let usage = model.sessionUsage,
+           usage.billedInputTokens > 0,
+           let cache = usage.cacheReadTokens {
+            let rate = Double(cache) / Double(usage.billedInputTokens) * 100
+            parts.append("缓存 \(Int(rate.rounded()))%")
         }
+
+        if env.usageBubbleItems.contains(.context),
+           let window = env.activeProfile?.contextWindow,
+           window > 0 {
+            let rate = Double(model.contextTokens) / Double(window) * 100
+            parts.append(String(format: "上下文 %.1f%%", rate))
+        }
+
+        if env.usageBubbleItems.contains(.cost), let cost = model.lastTurnCost {
+            parts.append(String(format: "≈$%.4f", cost))
+        }
+
+        return parts
     }
 
     private var statsSheet: some View {
@@ -268,6 +300,25 @@ struct ChatView: View {
                         .id(Anchor.typing)
                     }
 
+                    if env.showInternals, !model.streamingReasoning.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Label("思考中…", systemImage: "brain")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Text(model.streamingReasoning)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(8)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .padding(10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Color.primary.opacity(0.05))
+                        )
+                        .id(Anchor.reasoning)
+                    }
+
                     if model.isStreaming, !model.streamingText.isEmpty {
                         MessageBubble(message: streamingMessage, isStreaming: true)
                             .id(Anchor.streaming)
@@ -295,6 +346,7 @@ struct ChatView: View {
             .onChange(of: model.messages.count) { scroll(proxy) }
             .onChange(of: model.streamingText) { scroll(proxy) }
             .onChange(of: model.isThinking) { scroll(proxy) }
+            .onChange(of: model.streamingReasoning) { scroll(proxy) }
             .task {
                 // 首屏必须等一次布局：onAppear 时单元格还没量高，
                 // scrollTo 会停在上一步的位置，看起来像"没滚到底"。
@@ -404,6 +456,7 @@ struct ChatView: View {
 
     private enum Anchor: Hashable {
         case typing
+        case reasoning
         case streaming
         case bottom
     }

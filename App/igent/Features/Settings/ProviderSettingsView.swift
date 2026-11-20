@@ -228,10 +228,44 @@ struct ProviderSettingsView: View {
                 get: { env.showInternals },
                 set: { env.showInternals = $0 }
             ))
+            if env.showInternals {
+                Toggle("回答完成后自动收起思考过程", isOn: Binding(
+                    get: { env.autoCollapseReasoning },
+                    set: { env.autoCollapseReasoning = $0 }
+                ))
+            }
         } header: {
             Text("显示")
         } footer: {
-            Text("关掉后气泡只显示答案本身：思维链、检索了哪些词、打开了哪些页面都会隐藏。来源链接不受影响。")
+            Text("关掉复选项后气泡只显示答案本身：思维链、检索了哪些词、打开了哪些页面都会隐藏。来源链接不受影响。\n生成过程中思维链总是展开的；「自动收起」决定的是回答结束后要不要折起来。")
+        }
+
+        Section {
+            Toggle("显示用量气泡", isOn: Binding(
+                get: { env.showUsageBubble },
+                set: { env.showUsageBubble = $0 }
+            ))
+            if env.showUsageBubble {
+                ForEach(UsageBubbleItem.allCases) { item in
+                    Toggle(isOn: Binding(
+                        get: { env.usageBubbleItems.contains(item) },
+                        set: { isOn in
+                            var items = env.usageBubbleItems
+                            if isOn { items.insert(item) } else { items.remove(item) }
+                            env.usageBubbleItems = items
+                        }
+                    )) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(item.title)
+                            Text(item.detail).font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        } header: {
+            Text("用量气泡")
+        } footer: {
+            Text("显示在输入框上方，点一下可以打开完整统计。一项都不选时气泡自动隐藏。")
         }
     }
 

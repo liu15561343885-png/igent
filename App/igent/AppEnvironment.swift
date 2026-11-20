@@ -57,6 +57,25 @@ final class AppEnvironment {
         didSet { UserDefaults.standard.set(showInternals, forKey: "showInternals") }
     }
 
+    /// 回答完成后是否自动收起思维链。关掉则保持展开，由用户手动折。
+    var autoCollapseReasoning: Bool {
+        didSet { UserDefaults.standard.set(autoCollapseReasoning, forKey: "autoCollapseReasoning") }
+    }
+
+    /// 输入框上方的用量气泡：是否显示、显示哪几项。
+    var showUsageBubble: Bool {
+        didSet { UserDefaults.standard.set(showUsageBubble, forKey: "showUsageBubble") }
+    }
+
+    var usageBubbleItems: Set<UsageBubbleItem> {
+        didSet {
+            UserDefaults.standard.set(
+                usageBubbleItems.map(\.rawValue).sorted(),
+                forKey: "usageBubbleItems"
+            )
+        }
+    }
+
     /// 自动压缩开关。改它会即时影响正在运行的编排器。
     var autoCompactionEnabled: Bool {
         didSet {
@@ -97,6 +116,13 @@ final class AppEnvironment {
 
         autoCompactionEnabled = UserDefaults.standard.object(forKey: "autoCompaction") as? Bool ?? true
         showInternals = UserDefaults.standard.object(forKey: "showInternals") as? Bool ?? true
+        autoCollapseReasoning = UserDefaults.standard.object(forKey: "autoCollapseReasoning") as? Bool ?? true
+        showUsageBubble = UserDefaults.standard.object(forKey: "showUsageBubble") as? Bool ?? true
+        if let raw = UserDefaults.standard.stringArray(forKey: "usageBubbleItems") {
+            usageBubbleItems = Set(raw.compactMap(UsageBubbleItem.init(rawValue:)))
+        } else {
+            usageBubbleItems = Set(UsageBubbleItem.allCases)
+        }
         activeProfileID = UserDefaults.standard.string(forKey: "activeProfileID")
         activeModel = UserDefaults.standard.string(forKey: "activeModel") ?? ""
         webSearchKind = UserDefaults.standard.string(forKey: "webSearchKind")
@@ -227,6 +253,21 @@ final class AppEnvironment {
             .assistantMessage(researchAnswer, usage: nil, interrupted: false),
             to: session.id,
             surfaceOp: .append
+        )
+
+        try? await store.logUsage(
+            sessionID: session.id,
+            turn: 1,
+            step: 1,
+            provider: "demo",
+            model: "gpt-4o-mini",
+            purpose: nil,
+            usage: TokenUsage(
+                uncachedInputTokens: 1_840,
+                outputTokens: 620,
+                totalTokens: 2_460,
+                cacheReadTokens: 3_200
+            )
         )
 
         await open(session: session)

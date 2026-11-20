@@ -15,6 +15,8 @@ final class ChatViewModel {
     private(set) var messages: [Message] = []
     /// 正在流式的助手草稿。空串表示没有在流。
     private(set) var streamingText = ""
+    /// 正在流式的思维链。生成时展开显示，结束后随消息折叠。
+    private(set) var streamingReasoning = ""
     private(set) var isStreaming = false
     /// 已经收到首个 token 前显示"正在输入"。
     private(set) var isThinking = false
@@ -22,6 +24,9 @@ final class ChatViewModel {
     /// 最近一轮的用量与估算成本，用于输入框上方的状态条。
     private(set) var lastTurnUsage: TokenUsage?
     private(set) var lastTurnCost: Double?
+    /// 会话累计用量与当前上下文占用，供输入框上方的信息气泡使用。
+    private(set) var sessionUsage: TokenUsage?
+    private(set) var contextTokens = 0
 
     var draft = ""
     /// 本轮是否先联网检索。
@@ -86,8 +91,26 @@ final class ChatViewModel {
     func load() async {
         do {
             messages = try await store.projection(for: sessionID).messages
+            await refreshMetrics()
         } catch {
             lastError = "读取会话失败：\(error)"
+        }
+    }
+
+    /// 刷新会话累计用量与上下文占用。成本与百分比都由界面按开关决定要不要显示。
+    func refreshMetrics() async {
+        sessionUsage = try? await store.totalUsage(for: sessionID)
+        let projection = (try? await store.projection(for: sessionID)) ?? SurfaceProjection()
+        contextTokens = TokenEstimator.estimate(projection.messages)
+
+        // 重开 App 时还没有"本轮"概念，用最近一次落库的用量顶上，
+        // 否则气泡要等到下一轮才有数字。
+        if let record = try? await store.latestUsage(for: sessionID) {
+            lastTurnUsage = record.usage
+            let model = lastModel.isEmpty ? record.model : lastModel
+            if !model.isEmpty {
+                lastTurnCost = PriceTable.estimate(record.usage, model: model).amountUSD
+            }
         }
     }
 
@@ -115,6 +138,7 @@ final class ChatViewModel {
         isThinking = true
         searchSkipped = false
         streamingText = ""
+        streamingReasoning = ""
         pending = ""
         lastFlush = .distantPast
 
@@ -223,6 +247,11 @@ final class ChatViewModel {
             isThinking = true
 
         case let .chunk(chunk):
+            if case let .reasoningDelta(_, text) = chunk {
+                streamingReasoning += text
+                isThinking = false
+                return
+            }
             guard case let .textDelta(_, text) = chunk else { return }
             isThinking = false
             pending += text
@@ -241,6 +270,7 @@ final class ChatViewModel {
             isStreaming = false
             isThinking = false
             streamingText = ""
+            streamingReasoning = ""
             messages = result.projection.messages
             lastTurnUsage = result.usage
             lastTurnCost = result.usage.flatMap {
@@ -249,6 +279,7 @@ final class ChatViewModel {
             if case let .error(failure) = result.finish {
                 lastError = Self.describe(failure)
             }
+            await refreshMetrics()
             streamTask = nil
         }
     }

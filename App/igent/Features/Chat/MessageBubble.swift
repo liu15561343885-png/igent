@@ -8,6 +8,8 @@ struct MessageBubble: View {
     let message: Message
     var isStreaming: Bool = false
 
+    @State private var reasoningExpanded = false
+
     private var isUser: Bool { message.role == .user }
 
     private var reasoning: String? {
@@ -128,7 +130,7 @@ struct MessageBubble: View {
 
                 if let reasoning, env.showInternals {
                     // 思维链默认折起，只留一行提示；点开可读。
-                    DisclosureGroup {
+                    DisclosureGroup(isExpanded: $reasoningExpanded) {
                         Text(reasoning)
                             .font(.footnote)
                             .foregroundStyle(.secondary)
@@ -140,6 +142,10 @@ struct MessageBubble: View {
                             .labelStyle(.titleAndIcon)
                     }
                     .tint(.secondary)
+                    .onAppear {
+                        // 关掉「自动收起」时保持展开，由用户自己折。
+                        reasoningExpanded = !env.autoCollapseReasoning
+                    }
                 }
 
                 if usePlainText {
