@@ -32,26 +32,15 @@ struct SessionListView: View {
     /// 套了会把「完成」按钮挤到抽屉外面，顶部还会被导航栏占掉一截。
     private var drawerBody: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("会话")
-                    .font(.headline)
-                Spacer()
-                Button("完成") { close() }
-                    .font(.subheadline)
-            }
-            .padding(.horizontal, 18)
-            // 抽屉跨满整屏，得自己避开状态栏/灵动岛。
-            .padding(.top, Self.topSafeInset + 6)
-            .padding(.bottom, 12)
-
-            listContent
+            header
+            cardList
         }
         .task { await refresh() }
     }
 
     private var sheetBody: some View {
         NavigationStack {
-            listContent
+            cardList
                 .navigationTitle("会话")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
@@ -63,66 +52,186 @@ struct SessionListView: View {
         }
     }
 
-    @ViewBuilder
-    private var listContent: some View {
-        List {
-                Section {
-                    Button {
-                        Task {
-                            await env.startNewSession()
-                            close()
-                        }
-                    } label: {
-                        Label("新建对话", systemImage: "square.and.pencil")
-                            .font(.subheadline)
-                    }
-                }
+    private var header: some View {
+        HStack {
+            Text("会话")
+                .font(.system(size: 22, weight: .semibold))
+            Spacer()
+            Button("完成") { close() }
+                .font(.subheadline.weight(.medium))
+        }
+        .padding(.horizontal, 18)
+        // 抽屉跨满整屏，得自己避开状态栏/灵动岛。
+        .padding(.top, Self.topSafeInset + 6)
+        .padding(.bottom, 12)
+    }
 
-                Section("历史") {
-                    ForEach(sessions) { session in
-                        Button {
-                            Task {
-                                await env.open(session: session)
-                                close()
-                            }
-                        } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(session.title)
-                                        .font(.subheadline)
-                                        .foregroundStyle(.primary)
-                                        .lineLimit(1)
-                                    Text(session.updatedAt, format: .dateTime.month().day().hour().minute())
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                if session.id == currentSessionID {
-                                    Image(systemName: "checkmark")
-                                        .foregroundStyle(.tint)
-                                }
-                            }
-                        }
+    /// 每个会话一张独立卡片：套在 List 里时行与行是连成一片的，
+    /// 窄抽屉里看起来像一整块白板，分不清条目边界。
+    private var cardList: some View {
+        ScrollView {
+            VStack(spacing: 8) {
+                newSessionCard
+
+                if !sessions.isEmpty {
+                    HStack {
+                        // 之前用 .secondary，在浅色玻璃上几乎看不见；
+                        // 改为更实的深灰 + 条数，兼作"有多少条"的提示。
+                        Text("历史 \(sessions.count)")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.primary.opacity(0.5))
+                        Spacer()
                     }
-                    .onDelete { offsets in
-                        Task {
-                            for index in offsets {
-                                await env.delete(session: sessions[index])
+                    .padding(.horizontal, 4)
+                    .padding(.top, 10)
+                    .padding(.bottom, 2)
+
+                    ForEach(sessions) { session in
+                        SessionCardRow(
+                            session: session,
+                            isCurrent: session.id == currentSessionID,
+                            onOpen: {
+                                Task {
+                                    await env.open(session: session)
+                                    close()
+                                }
+                            },
+                            onDelete: {
+                                Task {
+                                    await env.delete(session: session)
+                                    await refresh()
+                                }
                             }
-                            await refresh()
-                        }
+                        )
                     }
                 }
             }
-            .listStyle(.insetGrouped)
-            // 卡片之间露出抽屉的材质，才有"玻璃面板上的列表"的层次
-            .scrollContentBackground(.hidden)
-            .listSectionSpacing(.compact)
-            .contentMargins(.top, 6, for: .scrollContent)
-            .contentMargins(.bottom, 12, for: .scrollContent)
+            .padding(.horizontal, 14)
+            .padding(.bottom, 24)
+        }
+        .scrollIndicators(.hidden)
+    }
+
+    private var newSessionCard: some View {
+        Button {
+            Task {
+                await env.startNewSession()
+                close()
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "square.and.pencil")
+                Text("新建对话")
+                    .font(.subheadline.weight(.medium))
+                Spacer()
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 13)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.accentColor.opacity(0.12))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(Color.accentColor.opacity(0.35), lineWidth: 0.5)
+            )
+            .foregroundStyle(Color.accentColor)
+        }
+        .buttonStyle(.plain)
     }
 
     private func refresh() async {
         sessions = (try? await env.store.sessions()) ?? []
+    }
+}
+
+/// 单个会话卡片。左滑露出删除，长按也能删。
+private struct SessionCardRow: View {
+    let session: SessionSummary
+    let isCurrent: Bool
+    let onOpen: () -> Void
+    let onDelete: () -> Void
+
+    @State private var offset: CGFloat = 0
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            // 卡片被拖开后露出的删除底
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.red.opacity(offset < -8 ? 0.9 : 0))
+                .overlay(alignment: .trailing) {
+                    Image(systemName: "trash")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.trailing, 18)
+                        .opacity(offset < -8 ? 1 : 0)
+                }
+
+            card
+                .offset(x: offset)
+                .gesture(
+                    DragGesture(minimumDistance: 12)
+                        .onChanged { value in
+                            offset = min(0, value.translation.width)
+                        }
+                        .onEnded { value in
+                            if value.translation.width < -80 {
+                                withAnimation(.easeOut(duration: 0.18)) { offset = -400 }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.18, execute: onDelete)
+                            } else {
+                                withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                                    offset = 0
+                                }
+                            }
+                        }
+                )
+                .onTapGesture {
+                    if offset < -8 {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) { offset = 0 }
+                    } else {
+                        onOpen()
+                    }
+                }
+                .contextMenu {
+                    Button("删除", role: .destructive, action: onDelete)
+                }
+        }
+    }
+
+    private var card: some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(session.title)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text(session.updatedAt, format: .dateTime.month().day().hour().minute())
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            if isCurrent {
+                Image(systemName: "checkmark")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(
+                    isCurrent
+                        ? AnyShapeStyle(Color.accentColor.opacity(0.14))
+                        : AnyShapeStyle(Color(.secondarySystemGroupedBackground))
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(
+                    isCurrent ? Color.accentColor.opacity(0.45) : Color.white.opacity(0.12),
+                    lineWidth: 0.5
+                )
+        )
     }
 }
