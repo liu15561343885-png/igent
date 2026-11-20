@@ -217,6 +217,7 @@ public enum StreamChunk: Sendable {
 3. 已被 `block-end` 关闭的 index 再收到 delta → 丢弃（防上游异常撑爆内存）。
 4. `usage` 至多一次；`finish` 恰一次且为终态；适配器抛错由 `LlmRuntime` 归一化为 `finish(.error/aborted)`。
 5. 适配器私有元数据（response id、原生 stop reason）走 `finish.meta`，不进内容块。
+6. **载体无关**：直连厂商用 SSE，将来桥接 DSH 用 WebSocket `item` 帧（`{type:'item',value}`），两者都归一到本契约；`StreamChunk` 不感知传输层。
 
 ### 4.4 终止原因 / 用量 / 失败
 
@@ -867,7 +868,7 @@ public struct RetryPolicy: Sendable {
 | **P2 四族齐** | 1 周 | Gemini、Responses、Azure、Ollama；思维链渲染；请求检查器；错误/重试 | 同一段对话在 4 家都能流式、取消、报错可读 |
 | **P3 图片** | 1 周 | 图片输入（下采样/EXIF/HEIC）、三家视觉映射、图像生成（同步+异步 job） | 一张照片在 3 家都被正确描述；异步任务杀进程后能续 |
 | **P4 联网** | 1 周 | Web seam、原生 grounding 三家、自建管线、引用 UI、来源预览 | 无原生检索的模型也能给出可点击的 `[n]` 引用 |
-| **P5 Skill** | 3–4 天 | frontmatter 解析、文件 provider、`Documents/Skills/` 外编辑、三层激活、chip 与注入展示 | 手写一个 skill 放进 Documents，用 `#` 与自动两种方式都能激活 |
+| **P5 Skill** | 3–4 天 | frontmatter 解析、文件 provider、`Documents/Skills/` 外编辑、三层激活、chip 与注入展示 | 手写一个 skill 放进 Documents，用 `#` 与自动两种方式都能激活；**把 DSH 的 skill 目录整段拷进来，一个字不改也能用** |
 | **P6 会话管理** | 1 周 | 压缩、TokenMeter、成本、自动标题、搜索、导出、分支/重生成 | 50 轮长会话触发压缩后仍能正确追问 |
 | **P7 打磨** | 3–5 天 | iPad 布局、键盘、快捷指令、暗色、iCloud 备份（可选） | 日常自用替换掉现用客户端 |
 
@@ -901,6 +902,70 @@ public struct RetryPolicy: Sendable {
 4. 接 SwiftUI 最小聊天界面，真实 Key 跑通流式。
 5. 加 skill：先只做 `always` + `manual` 两层（不写路由器），验证注入链路正确；`auto` 路由后补。
 6. 之后按 P2→P7 推进。
+
+---
+
+## 19. 参考实现：dshgo 与可选桥接
+
+### 19.1 dshgo 是什么（不是自包含 App）
+
+| 仓库 | 形态 |
+|---|---|
+| `xiazhi88/dshgo` ★65 | Android App + PC 端代理插件。插件把 `dsh web` 从 `127.0.0.1:3080` 经 `:3081` 转发到局域网，改写 Host/Origin 绕开栅栏 |
+| `just-a-FA-for-name/DSHgo` ★261 | APK 内置 Tailscale 内核 + PC 端 dsh 插件，开包即用 |
+| `Asukaleo-aa/dshgo-harmony` ★8 | 前者的鸿蒙移植（ArkTS/ArkUI + ArkWeb） |
+
+共同点：**手机上跑的是客户端，智能在电脑上**。它们解决的是"把 Mac 上的 DSH 搬到手机"，不是"在手机上做一个 AI App"。
+
+但 `xiazhi88/dshgo` 的 `android/docs/PROTOCOL.md` 是一份真机实测过的协议文档，价值很高。
+
+### 19.2 为什么它对本方案几乎"免费"
+
+DSH 的 API 词汇和 igent 的 Core 词汇本来就是同一套，所以桥接不需要语义翻译：
+
+| DSH RPC | igent |
+|---|---|
+| `POST /api/session/list` | 会话列表 |
+| `session/follow` + `assistantStream:true` | `StreamChunk` 流（同 block 语义） |
+| `session/page` → `records[].event{seq,type,data,surfaceOp}` | `SessionRecord` / `SurfaceOp` |
+| `session/prompt` `{requestId,sessionId,mode,content}` | `TurnOrchestrator.send()` |
+| `$events`（`api-session/*`、`approval/request`…） | 会话列表实时刷新 |
+| `tokenUsage{uncachedInputTokens,cacheReadTokens,cacheWriteTokens}` | `TokenUsage`（字段名一致） |
+| `contextBreakdown{systemTokens,toolsTokens,messageTokens}` | `RequestMeasurement.breakdown` |
+
+也就是说 `DSHBridgeAdapter` 是**第 5 个适配器**，不是第二套架构。
+
+### 19.3 但不作为主线
+
+| 理由 | 说明 |
+|---|---|
+| 图片生成 | DSH 没有这个能力，纯客户端模式做不到需求第三条 |
+| 工具会回来 | 桥接即获得 DSH 全部工具，"去掉工具调用"在桥接模式下无法成立 |
+| Mac 必须开机 | 出门、睡眠、断网即不可用 |
+| 版本耦合 | `session/list` 与 `/api/remote.mux` 需 DSH ≥ `0.1.2-alpha.2`；cookie 30 天且绑定 `dsh web` 进程，重启即失效 |
+| 部署成本 | 必须跑 PC 代理（Host/Origin 栅栏 + launch token + 两个 polyfill） |
+
+### 19.4 采纳的四件事
+
+1. **skill 格式与 DSH 完全兼容**（硬指标）：`name` / `description` / `whenToUse` 一字不改，`~/.dsh/skills`、`~/.agents/skills` 里的内容拷进 `Documents/Skills/` 即可用。
+2. **`StreamChunk` 载体无关**：直连走 SSE，桥接走 WS `item` 帧，归一到同一契约（见 §4.3 第 6 条）。
+3. **用法字段命名对齐 DSH**：`uncachedInputTokens` / `cacheReadTokens` / `cacheWriteTokens`，迁移与对比零成本。
+4. **移动端经验**：连接状态徽章、指数退避重连、流式转发不重建视图、分块可续传上传。
+
+### 19.5 不抄
+
+- **内置 Tailscale**：iOS 需 NetworkExtension + VPN 描述文件，自用也麻烦；真要异地访问，系统级 Tailscale 更合适。
+- **WebView 套壳 SPA**：dshgo 这么做是为了复用 DSH 前端；igent 的流式渲染必须原生，WebView 会让长文滚动与键盘交互变糟。
+- **绕 `/api` 栅栏**：那是"电脑当服务器"的场景，igent 不需要。
+
+### 19.6 可选 P8：`DSHBridgeAdapter`
+
+若之后想要"Mac 不在身边也能用同一套配置"，在主线完成后追加：
+
+- `ProviderProfile.family = "dsh-bridge"`，字段：`baseURL`、`launchToken`／`cookie`、`sessionFilter`
+- 前置：电脑跑一个 host/origin 改写代理（可借鉴 `lib/proxy.mjs`），或用 Tailscale 直连
+- 范围：只提供对话与会话同步；图片生成仍走 igent 自己的适配器
+- 工作量：3–5 天（协议已实测、映射已明确）
 
 ---
 
