@@ -247,6 +247,7 @@ final class AppEnvironment {
         }
         await pruneOrphanAttachments()
         #if DEBUG
+        await applyDevKeysIfRequested()
         await seedDemoConversationIfRequested()
         if ProcessInfo.processInfo.arguments.contains("-interject") {
             streamingInput = .interject
@@ -468,6 +469,68 @@ final class AppEnvironment {
         guard currentSession?.id == session.id else { return }
         chat = model
     }
+
+    #if DEBUG
+    /// 从 gitignored 的 `DevKeys.plist` 灌入真实密钥，便于联调。
+    ///
+    /// 只在 DEBUG + 启动参数 `-devKeys` 时启用；Release 构建里整段代码不存在。
+    func applyDevKeysIfRequested() async {
+        guard ProcessInfo.processInfo.arguments.contains("-devKeys"),
+              let path = Bundle.main.path(forResource: "DevKeys", ofType: "plist"),
+              let raw = NSDictionary(contentsOfFile: path) as? [String: Any]
+        else { return }
+
+        func value(_ key: String) -> String? {
+            guard let text = raw[key] as? String else { return nil }
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+
+        // 对话厂商
+        if let key = value("chatKey") {
+            let family = value("chatFamily").flatMap(ProviderFamily.init(rawValue:)) ?? .openAICompatible
+            let baseURL = value("chatBaseURL") ?? "https://api.openai.com/v1"
+            let model = value("chatModel") ?? ""
+            if let profile = ProviderDraft(
+                id: "dev",
+                name: "Dev \(family.rawValue)",
+                family: family,
+                baseURL: baseURL,
+                apiKey: key,
+                isNew: true,
+                serverToolsEnabled: family == .anthropic
+            ).profile() {
+                do {
+                    try keychain.set(key, for: Keychain.account(for: profile.id))
+                    try await store.saveProfile(profile)
+                    activeProfileID = profile.id
+                    if !model.isEmpty { activeModel = model }
+                } catch {
+                    bootError = "DevKeys 写入厂商失败：\(error)"
+                }
+            }
+        }
+
+        // DeepSeek：检索与 OCR 共用
+        if let key = value("deepseekKey") {
+            try? keychain.set(key, for: Keychain.account(for: Self.searchAccount(for: .deepseek)))
+            webSearchKind = WebSearchKind.deepseek.rawValue
+        }
+
+        // 生图
+        if let key = value("imageKey") {
+            try? keychain.set(key, for: Keychain.account(for: "imageprovider"))
+            imageSettings = ImageProviderSettings(
+                family: .openAICompatible,
+                baseURL: value("imageBaseURL") ?? ImageProviderSettings.default.baseURL,
+                model: value("imageModel") ?? ImageProviderSettings.default.model
+            )
+        }
+
+        await reloadProviders()
+        refreshCapabilityFlags()
+    }
+    #endif
 
     /// 清理没有被任何会话引用的图片文件。
     ///
