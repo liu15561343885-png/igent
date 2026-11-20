@@ -50,8 +50,26 @@ final class ChatViewModel {
     private var turnCounter = 0
     /// 插话：打断当前回合后要接着发出去的那句话。
     private(set) var pendingInterjection: String?
-    /// 是否允许在生成过程中插话（设置项）。
-    var interjectEnabled = false
+    /// 生成中发送消息的语义：插话（打断改方向）或排队（本轮结束后再发）。
+    /// 两者互斥，由设置层保证只开一个。
+    enum StreamingInputMode: String, Sendable {
+        case off
+        case interject
+        case queue
+    }
+
+    var streamingInputMode: StreamingInputMode = .off
+
+    var interjectEnabled: Bool { streamingInputMode == .interject }
+    var queueEnabled: Bool { streamingInputMode == .queue }
+
+    struct QueuedMessage: Identifiable, Sendable, Equatable {
+        let id = UUID()
+        var text: String
+    }
+
+    /// 等待本轮结束后依次发出的消息。
+    private(set) var queued: [QueuedMessage] = []
     /// 上一轮的参数。插话要原样重开一轮，不能用当前界面状态猜。
     private struct TurnInputs {
         var configuration: TurnOrchestrator.Configuration
@@ -149,7 +167,19 @@ final class ChatViewModel {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let image = pendingImage
         let documents = pendingDocuments
-        guard !text.isEmpty || image != nil || !documents.isEmpty, !isStreaming, !isParsingDocument else {
+
+        // 正在生成时：插话走中断、排队走队列，两者都要原始参数重开一轮。
+        if isStreaming {
+            guard !text.isEmpty else { return }
+            if queueEnabled {
+                _ = enqueue(text)
+            } else if interjectEnabled {
+                _ = interject(text)
+            }
+            return
+        }
+
+        guard !text.isEmpty || image != nil || !documents.isEmpty, !isParsingDocument else {
             return
         }
 
@@ -407,6 +437,37 @@ final class ChatViewModel {
         return true
     }
 
+    /// 排队：本轮结束后再发。不打断当前生成。
+    @discardableResult
+    func enqueue(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, queueEnabled else { return false }
+        queued.append(QueuedMessage(text: trimmed))
+        draft = ""
+        return true
+    }
+
+    func removeQueued(id: UUID) {
+        queued.removeAll { $0.id == id }
+    }
+
+    /// 一轮结束后，把队首发出去。每次只发一条：后面的要等这条的新一轮结束。
+    private func flushQueue() {
+        guard !isStreaming, let inputs = lastInputs, !queued.isEmpty else { return }
+        let next = queued.removeFirst()
+        startTurn(
+            text: next.text,
+            image: nil,
+            documents: [],
+            configuration: inputs.configuration,
+            webSearch: inputs.webSearch,
+            webFetch: inputs.webFetch,
+            research: inputs.research,
+            skills: inputs.skills,
+            serverTools: inputs.serverTools
+        )
+    }
+
     /// 把待发的插话接着发出去。
     private func flushInterjection() {
         guard let pending = pendingInterjection, let inputs = lastInputs else { return }
@@ -454,6 +515,7 @@ final class ChatViewModel {
             self.pending = ""
             await self.reload()
             self.flushInterjection()
+            self.flushQueue()
         }
     }
 
@@ -503,6 +565,7 @@ final class ChatViewModel {
             streamTask = nil
             // 插话是在取消之后才发的：等这一轮的收尾（部分内容已落库）完成再开新回合。
             flushInterjection()
+            flushQueue()
         }
     }
 

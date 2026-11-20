@@ -226,14 +226,20 @@ struct ProviderSettingsView: View {
     @ViewBuilder
     private var interactionSection: some View {
         Section {
-            Toggle("允许生成中插话", isOn: Binding(
-                get: { env.interjectEnabled },
-                set: { env.interjectEnabled = $0 }
-            ))
+            Picker("生成中发送", selection: Binding(
+                get: { env.streamingInput },
+                set: { env.streamingInput = $0 }
+            )) {
+                Text("关闭").tag(ChatViewModel.StreamingInputMode.off)
+                Text("插话（打断改方向）").tag(ChatViewModel.StreamingInputMode.interject)
+                Text("排队（本轮结束后再发）").tag(ChatViewModel.StreamingInputMode.queue)
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
         } header: {
-            Text("交互")
+            Text("生成中发送消息")
         } footer: {
-            Text("开启后，模型思考或输出时也能输入并发送。插话会打断当前这一轮，把这句话作为新指示接着生成——已经说出的部分会保留在上下文里，不会被当成没发生。")
+            Text("两者互斥，只能选一个。\n插话：打断当前这一轮，把这句话作为新指示接着生成，已说出的部分保留在上下文里；代价是同一段内容会生成两次。\n排队：不打断，等本轮结束后依次发出，每条等上一条答完再发。")
         }
     }
 

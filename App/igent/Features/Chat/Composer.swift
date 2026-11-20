@@ -38,8 +38,11 @@ struct Composer: View {
     var onStop: () -> Void
     var onPickImage: (Data) -> Void
     var onRemoveImage: () -> Void
-    var interjectEnabled: Bool
+    var streamingMode: ChatViewModel.StreamingInputMode
+    var queued: [ChatViewModel.QueuedMessage]
     var onInterject: () -> Void
+    var onQueue: () -> Void
+    var onRemoveQueued: (UUID) -> Void
 
     var onPickDocuments: ([URL]) -> Void
     var onRemoveDocument: (UUID) -> Void
@@ -57,7 +60,13 @@ struct Composer: View {
 
     private var placeholder: String {
         if imageMode { return "描述你想要的画面…" }
-        if isStreaming, interjectEnabled { return "插话以调整方向…" }
+        if isStreaming {
+            switch streamingMode {
+            case .interject: return "插话以调整方向…"
+            case .queue: return "排队，本轮结束后发送…"
+            case .off: break
+            }
+        }
         return "发消息…"
     }
 
@@ -65,6 +74,7 @@ struct Composer: View {
         VStack(spacing: 8) {
             attachmentPreview
             documentPreview
+            queuedPreview
             skillChip
             searchStatus
 
@@ -76,6 +86,35 @@ struct Composer: View {
     }
 
     // MARK: - 上方状态区
+
+    @ViewBuilder
+    private var queuedPreview: some View {
+        if !queued.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(queued) { item in
+                    HStack(spacing: 8) {
+                        Image(systemName: "clock")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Text(item.text)
+                            .font(.caption)
+                            .lineLimit(1)
+                        Spacer()
+                        Button {
+                            onRemoveQueued(item.id)
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .symbolRenderingMode(.palette)
+                                .foregroundStyle(.white, .black.opacity(0.35))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("移除排队消息")
+                    }
+                }
+            }
+            .padding(.horizontal, 14)
+        }
+    }
 
     @ViewBuilder
     private var documentPreview: some View {
@@ -200,7 +239,7 @@ struct Composer: View {
                 )
                 .focused($isFocused)
                 .submitLabel(.send)
-                .disabled((isStreaming && !interjectEnabled) || isBusy)
+                .disabled((isStreaming && streamingMode == .off) || isBusy)
 
             sendButton
         }
@@ -234,7 +273,7 @@ struct Composer: View {
 
     private var sendButton: some View {
         HStack(spacing: 6) {
-            if isStreaming, interjectEnabled, canSend {
+            if isStreaming, streamingMode != .off, canSend {
                 // 有内容时主按钮是"插话"，停止退成旁边那个小按钮——
                 // 想打断但没话说的人应该按停止，这两个动作不能混。
                 Button(action: onStop) {
@@ -256,8 +295,10 @@ struct Composer: View {
     private var primaryButton: some View {
         Button {
             if isStreaming {
-                if interjectEnabled, canSend {
+                if canSend, streamingMode == .interject {
                     onInterject()
+                } else if canSend, streamingMode == .queue {
+                    onQueue()
                 } else {
                     onStop()
                 }
@@ -269,7 +310,7 @@ struct Composer: View {
                 if isBusy {
                     ProgressView().controlSize(.small)
                 } else {
-                    Image(systemName: isStreaming && !(interjectEnabled && canSend) ? "stop.fill" : "arrow.up")
+                    Image(systemName: isStreaming && !(streamingMode != .off && canSend) ? "stop.fill" : "arrow.up")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(.white)
                 }
@@ -278,10 +319,10 @@ struct Composer: View {
             .background(Circle().fill(buttonFill))
         }
         .buttonStyle(.plain)
-        .disabled(isStreaming ? (!canSend && !interjectEnabled) : (!canSend || isBusy))
+        .disabled(isStreaming ? (!canSend && streamingMode == .off) : (!canSend || isBusy))
         .accessibilityLabel(
             isStreaming
-                ? (interjectEnabled && canSend ? "插话" : "停止生成")
+                ? (canSend ? (streamingMode == .queue ? "排队发送" : "插话") : "停止生成")
                 : (imageMode ? "生成图片" : "发送")
         )
     }

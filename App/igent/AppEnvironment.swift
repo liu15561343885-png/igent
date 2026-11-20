@@ -59,10 +59,16 @@ final class AppEnvironment {
         didSet { UserDefaults.standard.set(showInternals, forKey: "showInternals") }
     }
 
-    /// 是否允许在生成过程中插话（打断并改方向）。
-    var interjectEnabled: Bool {
-        didSet { UserDefaults.standard.set(interjectEnabled, forKey: "interjectEnabled") }
+    /// 生成中发送消息的语义：关闭 / 插话 / 排队。两者互斥，由这里强制。
+    var streamingInput: ChatViewModel.StreamingInputMode {
+        didSet {
+            UserDefaults.standard.set(streamingInput.rawValue, forKey: "streamingInput")
+            chat?.streamingInputMode = streamingInput
+        }
     }
+
+    var interjectEnabled: Bool { streamingInput == .interject }
+    var queueEnabled: Bool { streamingInput == .queue }
 
     /// 回答完成后是否自动收起思维链。关掉则保持展开，由用户手动折。
     var autoCollapseReasoning: Bool {
@@ -123,7 +129,9 @@ final class AppEnvironment {
 
         autoCompactionEnabled = UserDefaults.standard.object(forKey: "autoCompaction") as? Bool ?? true
         showInternals = UserDefaults.standard.object(forKey: "showInternals") as? Bool ?? true
-        interjectEnabled = UserDefaults.standard.object(forKey: "interjectEnabled") as? Bool ?? false
+        streamingInput = ChatViewModel.StreamingInputMode(
+            rawValue: UserDefaults.standard.string(forKey: "streamingInput") ?? ""
+        ) ?? .off
         autoCollapseReasoning = UserDefaults.standard.object(forKey: "autoCollapseReasoning") as? Bool ?? true
         showUsageBubble = UserDefaults.standard.object(forKey: "showUsageBubble") as? Bool ?? true
         if let raw = UserDefaults.standard.stringArray(forKey: "usageBubbleItems") {
@@ -163,8 +171,12 @@ final class AppEnvironment {
         #if DEBUG
         await seedDemoConversationIfRequested()
         if ProcessInfo.processInfo.arguments.contains("-interject") {
-            interjectEnabled = true
-            chat?.interjectEnabled = true
+            streamingInput = .interject
+            chat?.streamingInputMode = .interject
+        }
+        if ProcessInfo.processInfo.arguments.contains("-queue") {
+            streamingInput = .queue
+            chat?.streamingInputMode = .queue
         }
         if ProcessInfo.processInfo.arguments.contains("-fakeStreaming") {
             let draft = ProcessInfo.processInfo.arguments.contains("-withDraft") ? "换个角度，别只讲发布" : ""
@@ -369,7 +381,7 @@ final class AppEnvironment {
             attachments: attachments,
             planner: planner
         )
-        model.interjectEnabled = interjectEnabled
+        model.streamingInputMode = streamingInput
         await model.load()
         chat = model
     }
