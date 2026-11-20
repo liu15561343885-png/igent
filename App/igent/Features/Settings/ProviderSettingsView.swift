@@ -20,6 +20,7 @@ struct ProviderSettingsView: View {
                 imageSection
                 webSearchSection
                 compactionSection
+                displaySection
                 debugSection
             }
             .navigationTitle("设置")
@@ -217,6 +218,20 @@ struct ProviderSettingsView: View {
             Text("图片生成")
         } footer: {
             Text("与对话厂商分开配置：对话可以用 DeepSeek，画图用 OpenAI。OpenAI 填 gpt-image-1 或 dall-e-3；Gemini 填 gemini-2.5-flash-image，Base URL 填到 v1beta。")
+        }
+    }
+
+    @ViewBuilder
+    private var displaySection: some View {
+        Section {
+            Toggle("显示思考过程与联网动作", isOn: Binding(
+                get: { env.showInternals },
+                set: { env.showInternals = $0 }
+            ))
+        } header: {
+            Text("显示")
+        } footer: {
+            Text("关掉后气泡只显示答案本身：思维链、检索了哪些词、打开了哪些页面都会隐藏。来源链接不受影响。")
         }
     }
 

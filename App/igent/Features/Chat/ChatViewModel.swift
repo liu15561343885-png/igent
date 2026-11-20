@@ -155,6 +155,14 @@ final class ChatViewModel {
                 } else if let research {
                     // 深度调研：DeepSeek 用服务端工具多跳检索，产出事实与来源。
                     if let brief = try? await research.research(question: query, queries: queries) {
+                        // 调研的中间过程作为展示块随消息存下来（受"显示思考过程与联网动作"开关控制）。
+                        // 类型是 research_step，不会回传给任何厂商。
+                        outgoing.append(contentsOf: brief.steps.map { step in
+                            .providerBlock(ProviderBlock(
+                                type: "research_step",
+                                payload: .object(["text": .string(step)])
+                            ))
+                        })
                         outgoing.append(.context(
                             brief.contextEvidence(query: queries.joined(separator: " / "))
                         ))

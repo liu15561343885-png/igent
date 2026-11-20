@@ -10,6 +10,8 @@ public struct ResearchBrief: Sendable {
     public var usage: TokenUsage?
     /// 调研过程中实际发生的服务端工具调用次数（搜索 / 开页 / 页内查找）。
     public var toolCalls: Int
+    /// 中间过程的人话描述，供界面展示（受"显示思考过程与联网动作"开关控制）。
+    public var steps: [String]
 
     /// 转成注入用的证据块。
     public func contextEvidence(query: String) -> ContextEvidence {
@@ -104,6 +106,49 @@ public struct WebResearch: Sendable {
         return try Self.brief(from: blocks, usage: usage)
     }
 
+    /// 把服务端工具的调用翻译成一行行可读的步骤。
+    static func steps(from blocks: [ContentBlock]) -> [String] {
+        var result: [String] = []
+        for block in blocks {
+            guard case let .providerBlock(payload) = block else { continue }
+            let object = payload.payload.objectValue
+            switch payload.type {
+            case "server_tool_use":
+                let input = object?["input"]?.objectValue
+                switch input?["action"]?.stringValue ?? "" {
+                case "search":
+                    let queries = input?["queries"]?.arrayValue?
+                        .compactMap { $0.stringValue }.joined(separator: " / ") ?? ""
+                    result.append(queries.isEmpty ? "联网检索" : "检索：\(queries)")
+                case "open_page":
+                    result.append("打开：\(host(of: input?["url"]?.stringValue))")
+                case "find_in_page":
+                    result.append("页内查找：「\(input?["pattern"]?.stringValue ?? "")」")
+                case "read_link":
+                    result.append("读取：\(host(of: input?["url"]?.stringValue))")
+                default:
+                    continue
+                }
+            case "web_search_tool_result":
+                let count = object?["content"]?.arrayValue?.count ?? 0
+                result.append("找到 \(count) 条结果")
+            case "web_fetch_tool_result":
+                let title = object?["content"]?.objectValue?["title"]?.stringValue ?? ""
+                result.append(title.isEmpty ? "已读取页面" : "已读取：\(title)")
+            default:
+                continue
+            }
+        }
+        return result
+    }
+
+    private static func host(of urlString: String?) -> String {
+        guard let urlString, let host = URL(string: urlString)?.host() else {
+            return urlString ?? "页面"
+        }
+        return host
+    }
+
     static func brief(from blocks: [ContentBlock], usage: TokenUsage?) throws -> ResearchBrief {
         var findings = ""
         var sources: [WebSource] = []
@@ -148,7 +193,8 @@ public struct WebResearch: Sendable {
             findings: trimmed,
             sources: sources,
             usage: usage,
-            toolCalls: toolCalls
+            toolCalls: toolCalls,
+            steps: steps(from: blocks)
         )
     }
 }

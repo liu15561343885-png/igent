@@ -52,6 +52,11 @@ final class AppEnvironment {
     /// 检索方式变化时自增，同上。
     var searchModeRevision = 0
 
+    /// 是否显示思维链、检索动作等中间过程。
+    var showInternals: Bool {
+        didSet { UserDefaults.standard.set(showInternals, forKey: "showInternals") }
+    }
+
     /// 自动压缩开关。改它会即时影响正在运行的编排器。
     var autoCompactionEnabled: Bool {
         didSet {
@@ -91,6 +96,7 @@ final class AppEnvironment {
         planner = SearchPlanner(runtime: runtime)
 
         autoCompactionEnabled = UserDefaults.standard.object(forKey: "autoCompaction") as? Bool ?? true
+        showInternals = UserDefaults.standard.object(forKey: "showInternals") as? Bool ?? true
         activeProfileID = UserDefaults.standard.string(forKey: "activeProfileID")
         activeModel = UserDefaults.standard.string(forKey: "activeModel") ?? ""
         webSearchKind = UserDefaults.standard.string(forKey: "webSearchKind")
@@ -120,6 +126,10 @@ final class AppEnvironment {
     /// 仅用于模拟器截图与界面迭代：`-seedDemoConversation` 启动参数会灌一段示例对话。
     private func seedDemoConversationIfRequested() async {
         guard ProcessInfo.processInfo.arguments.contains("-seedDemoConversation") else { return }
+
+        if ProcessInfo.processInfo.arguments.contains("-hideInternals") {
+            showInternals = false
+        }
 
         // 让两个模式开关处于"可用"状态，方便截图与界面迭代。
         webSearchKind = WebSearchKind.tavily.rawValue
@@ -182,6 +192,42 @@ final class AppEnvironment {
                 surfaceOp: .append
             )
         }
+
+        // 一条带"调研中间过程 + 来源"的消息，验证显示开关与引用渲染。
+        let researchAsk = Message(
+            role: .user,
+            blocks: [.text("DeepSeek 最近发布了什么？")],
+            source: .user
+        )
+        let evidence = ContextEvidence(
+            query: "DeepSeek 2026年11月 发布",
+            sources: [
+                WebSource(url: URL(string: "https://api-docs.deepseek.com/guides/web_tools")!, title: "Web Tools"),
+                WebSource(url: URL(string: "https://api-docs.deepseek.com/guides/search")!, title: "Search & Fetch")
+            ],
+            digest: "DeepSeek 在 2026 年 11 月开放了 Web Tools 与 Search/Fetch API。[1][2]",
+            fetchedAt: Date(),
+            truncated: false
+        )
+        let researchAnswer = Message(
+            role: .assistant,
+            blocks: [
+                .providerBlock(ProviderBlock(type: "research_step", payload: .object(["text": .string("检索：DeepSeek 2026年11月 发布")]))),
+                .providerBlock(ProviderBlock(type: "research_step", payload: .object(["text": .string("打开：api-docs.deepseek.com")]))),
+                .providerBlock(ProviderBlock(type: "research_step", payload: .object(["text": .string("找到 5 条结果")]))),
+                .context(evidence),
+                .text("DeepSeek 在 2026 年 11 月开放了两套联网能力：对话里的服务端工具，以及独立的 Search/Fetch API [1][2]。"),
+                .citation(Citation(index: 1, url: URL(string: "https://api-docs.deepseek.com/guides/web_tools")!, title: "Web Tools")),
+                .citation(Citation(index: 2, url: URL(string: "https://api-docs.deepseek.com/guides/search")!, title: "Search & Fetch"))
+            ],
+            source: .model(provider: "demo", model: "gpt-4o-mini", meta: nil)
+        )
+        try? await store.append(.userMessage(researchAsk), to: session.id, surfaceOp: .append)
+        try? await store.append(
+            .assistantMessage(researchAnswer, usage: nil, interrupted: false),
+            to: session.id,
+            surfaceOp: .append
+        )
 
         await open(session: session)
     }

@@ -3,6 +3,8 @@ import SwiftUI
 
 /// 一条消息气泡。对齐方式、配色、圆角都按 iMessage 的规则来。
 struct MessageBubble: View {
+    @Environment(AppEnvironment.self) private var env
+
     let message: Message
     var isStreaming: Bool = false
 
@@ -57,6 +59,8 @@ struct MessageBubble: View {
             case "web_fetch_tool_result":
                 let title = object?["content"]?.objectValue?["title"]?.stringValue ?? ""
                 return ("doc.richtext", title.isEmpty ? "已读取页面" : "已读取：\(title)")
+            case "research_step":
+                return ("sparkles", object?["text"]?.stringValue ?? "调研")
             default:
                 return nil
             }
@@ -111,7 +115,7 @@ struct MessageBubble: View {
                     }
                 }
 
-                if !providerRows.isEmpty || !contextRows.isEmpty {
+                if env.showInternals, !providerRows.isEmpty || !contextRows.isEmpty {
                     VStack(alignment: .leading, spacing: 3) {
                         ForEach(Array((providerRows + contextRows).enumerated()), id: \.offset) { _, row in
                             Label(row.text, systemImage: row.icon)
@@ -122,7 +126,7 @@ struct MessageBubble: View {
                     }
                 }
 
-                if let reasoning {
+                if let reasoning, env.showInternals {
                     // 思维链默认折起，只留一行提示；点开可读。
                     DisclosureGroup {
                         Text(reasoning)

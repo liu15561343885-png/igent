@@ -80,6 +80,11 @@ public struct AnthropicRequestBuilder: Sendable {
     }
 
     /// Anthropic 拒绝空 content 数组，因此没有可用块的 message 直接不发送。
+    /// 允许原样回传给厂商的块类型。其余类型的 providerBlock 只用于界面展示。
+    static let replayableBlockTypes: Set<String> = [
+        "server_tool_use", "web_search_tool_result", "web_fetch_tool_result"
+    ]
+
     /// 返回角色与内容块。Anthropic 拒绝空 content 数组，所以没有可用块时返回 nil。
     private func wire(
         _ message: Message,
@@ -114,6 +119,9 @@ public struct AnthropicRequestBuilder: Sendable {
                     "text": .string(ContextRendering.render(evidence))
                 ]))
             case let .providerBlock(block):
+                // 只回传厂商真正认得的三种块；其余（如仅用于展示的 research_step）
+                // 发出去会被当成未知类型拒绝。
+                guard Self.replayableBlockTypes.contains(block.type) else { continue }
                 // 原样回传：DeepSeek 把网页正文加密在 signature 里，
                 // 改动或丢弃都会让"上一轮读过的那一页"从上下文里消失。
                 blocks.append(block.payload)
