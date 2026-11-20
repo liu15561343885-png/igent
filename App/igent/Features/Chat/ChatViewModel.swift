@@ -95,6 +95,7 @@ final class ChatViewModel {
         configuration: TurnOrchestrator.Configuration,
         webSearch: (any WebSearchProvider)? = nil,
         webFetch: (any WebFetchProvider)? = nil,
+        research: WebResearch? = nil,
         skills: [SkillDefinition] = [],
         serverTools: [ServerToolRequest] = []
     ) {
@@ -137,7 +138,7 @@ final class ChatViewModel {
 
             // 先检索再问模型：证据作为 context 块随本轮一起发出，
             // UI 上的用户气泡仍然只有文字/图片（context 不显示）。
-            if useSearch, let provider = webSearch {
+            if useSearch, webSearch != nil || research != nil {
                 self.isSearching = true
 
                 // 先让模型判断「要不要搜、搜什么」，再执行。
@@ -151,7 +152,14 @@ final class ChatViewModel {
 
                 if queries.isEmpty {
                     self.searchSkipped = true
-                } else {
+                } else if let research {
+                    // 深度调研：DeepSeek 用服务端工具多跳检索，产出事实与来源。
+                    if let brief = try? await research.research(question: query, queries: queries) {
+                        outgoing.append(.context(
+                            brief.contextEvidence(query: queries.joined(separator: " / "))
+                        ))
+                    }
+                } else if let provider = webSearch {
                     let outcome = await WebContextBuilder().build(
                         queries: queries,
                         search: provider,

@@ -49,6 +49,8 @@ final class AppEnvironment {
 
     /// 图片厂商配置变化时自增，方便界面刷新（配置存在 UserDefaults 里，不参与观察）。
     var imageProviderRevision = 0
+    /// 检索方式变化时自增，同上。
+    var searchModeRevision = 0
 
     /// 自动压缩开关。改它会即时影响正在运行的编排器。
     var autoCompactionEnabled: Bool {

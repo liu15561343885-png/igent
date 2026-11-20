@@ -346,12 +346,21 @@ struct ChatView: View {
         let serverTools = model.webSearchEnabled && !profile.capabilities.serverTools.isEmpty
             ? profile.capabilities.serverTools
             : []
-        let useAppSearch = model.webSearchEnabled && serverTools.isEmpty
+
+        // 三种联网执行方式，优先级从强到弱：
+        // 1. 主对话厂商自带服务端工具（DeepSeek）→ 模型自己搜；
+        // 2. 深度调研 → DeepSeek 用服务端工具多跳检索，结果交给当前模型写答案；
+        // 3. 快速检索 → 应用侧搜一次、抓原文注入。
+        let research = model.webSearchEnabled && serverTools.isEmpty && env.searchMode == .deepResearch
+            ? env.makeWebResearch()
+            : nil
+        let useAppSearch = model.webSearchEnabled && serverTools.isEmpty && research == nil
 
         model.send(
             configuration: configuration,
             webSearch: useAppSearch ? env.makeWebSearchProvider() : nil,
             webFetch: useAppSearch ? env.makeWebFetchProvider() : nil,
+            research: research,
             skills: skills,
             serverTools: serverTools
         )

@@ -1,3 +1,4 @@
+import AgentKit
 import CoreKit
 import Foundation
 import LLMKit
@@ -50,5 +51,69 @@ extension AppEnvironment {
             if !key.isEmpty { return DeepSeekFetchProvider(apiKey: key) }
         }
         return HTTPFetcher()
+    }
+}
+
+/// 联网检索的两种执行方式。
+enum WebSearchMode: String, CaseIterable, Identifiable {
+    /// 应用侧一次性检索：搜一次、抓前几页、把原文塞进上下文。
+    case quick
+    /// 深度调研：先让 DeepSeek 用服务端工具多跳检索，产出带编号的事实，再交给主模型回答。
+    case deepResearch
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .quick: "快速检索（原文注入）"
+        case .deepResearch: "深度调研（DeepSeek 多跳）"
+        }
+    }
+}
+
+extension AppEnvironment {
+    var searchMode: WebSearchMode {
+        get {
+            WebSearchMode(rawValue: UserDefaults.standard.string(forKey: "webSearchMode") ?? "")
+                ?? .deepResearch
+        }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: "webSearchMode")
+            searchModeRevision += 1
+        }
+    }
+
+    /// 深度调研需要一个 DeepSeek 的 Anthropic 兼容端点 + 服务端工具。
+    func makeWebResearch() -> WebResearch? {
+        guard WebSearchKind(rawValue: webSearchKind) == .deepseek else { return nil }
+        let key = keychain.get(Keychain.account(for: "websearch")) ?? ""
+        guard !key.isEmpty else { return nil }
+
+        let tools = [
+            ServerToolRequest(wireType: "deepseek_web_search"),
+            ServerToolRequest(wireType: "deepseek_read_url")
+        ]
+        let profile = ProviderProfile(
+            id: "deepseek-research",
+            name: "DeepSeek 调研",
+            family: .anthropic,
+            baseURL: URL(string: "https://api.deepseek.com/anthropic/v1")!,
+            chatPath: "/messages",
+            capabilities: Capabilities(
+                vision: false,
+                reasoning: true,
+                streamUsage: true,
+                systemStyle: .topLevel,
+                defaultMaxTokens: 1500,
+                contextWindow: 128_000,
+                serverTools: tools
+            ),
+            auth: .apiKey(header: "x-api-key")
+        )
+        return WebResearch(
+            adapter: AnthropicAdapter(profile: profile, apiKey: key),
+            model: "deepseek-flash",
+            serverTools: tools
+        )
     }
 }

@@ -253,11 +253,20 @@ struct ProviderSettingsView: View {
                 ))
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
+
+                Picker("检索方式", selection: Binding(
+                    get: { env.searchMode },
+                    set: { env.searchMode = $0 }
+                )) {
+                    ForEach(WebSearchMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
             }
         } header: {
             Text("联网检索")
         } footer: {
-            Text("对话里打开地球图标后，会先检索再回答，并在消息里附上来源。密钥同样只存钥匙串。")
+            Text("深度调研需要 DeepSeek 的 Key：先由 DeepSeek 联网多跳检索（搜索 / 开页 / 页内查找），把带编号的事实交给当前对话模型写答案。快速检索则只搜一次、把原文注入。")
         }
     }
 
@@ -369,24 +378,36 @@ struct ProviderDraft: Identifiable {
         case .openAICompatible:
             chatPath = "/chat/completions"
             auth = .bearer
-            capabilities = Capabilities(vision: true, streamUsage: true)
+            capabilities = Capabilities(
+                vision: true, streamUsage: true, contextWindow: 128_000
+            )
         case .openAIResponses:
             chatPath = "/responses"
             auth = .bearer
-            capabilities = Capabilities(vision: true, reasoning: true, streamUsage: true, systemStyle: .topLevel)
+            capabilities = Capabilities(
+                vision: true, reasoning: true, streamUsage: true,
+                systemStyle: .topLevel, contextWindow: 128_000
+            )
         case .anthropic:
             chatPath = "/messages"
             auth = .apiKey(header: "x-api-key")
             capabilities = Capabilities(
                 vision: true, reasoning: true, streamUsage: true,
-                systemStyle: .topLevel, defaultMaxTokens: 4096
+                systemStyle: .topLevel, defaultMaxTokens: 4096,
+                contextWindow: 200_000,
+                // 只有用户显式打开时才声明，否则等于擅自允许模型联网。
+                serverTools: serverToolsEnabled
+                    ? [ServerToolRequest(wireType: "deepseek_web_search"),
+                       ServerToolRequest(wireType: "deepseek_read_url")]
+                    : []
             )
         case .gemini:
             chatPath = "/models/{model}:streamGenerateContent?alt=sse"
             auth = .apiKey(header: "x-goog-api-key")
             capabilities = Capabilities(
                 vision: true, reasoning: true, streamUsage: true,
-                systemStyle: .systemInstruction, defaultMaxTokens: 8192
+                systemStyle: .systemInstruction, defaultMaxTokens: 8192,
+                contextWindow: 1_048_576
             )
         }
         return ProviderProfile(

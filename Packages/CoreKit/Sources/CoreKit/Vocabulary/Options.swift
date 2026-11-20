@@ -17,6 +17,8 @@ public enum CallPurpose: String, Codable, Sendable, CaseIterable {
     case queryRewrite
     /// skill 自动路由。
     case skillRoute
+    /// 联网调研（用服务端工具做多跳检索）。
+    case webResearch
 }
 
 /// 服务端工具声明。放在请求里（而不是 profile 里）是因为"这次允许联网"是每轮的决定。
