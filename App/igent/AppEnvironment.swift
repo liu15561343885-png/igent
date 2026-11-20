@@ -20,6 +20,8 @@ final class AppEnvironment {
     let attachments: AttachmentStore
     /// skill 注册表（扫 Documents/Skills）。
     let skillRegistry: SkillRegistry
+    let compaction: CompactionService
+    let titles: TitleService
     /// 已加载 skill 的同步快照，供发送时拼 system。
     var skillDefinitions: [String: SkillDefinition] = [:]
     var skillSummaries: [SkillSummary] = []
@@ -59,7 +61,6 @@ final class AppEnvironment {
         skillRegistry = SkillRegistry(
             provider: FileSystemSkillProvider(root: Self.skillsRoot)
         )
-
         do {
             let store = try SessionStore(url: databaseURL)
             self.store = store
@@ -71,6 +72,10 @@ final class AppEnvironment {
             self.orchestrator = TurnOrchestrator(store: fallback, runtime: runtime)
             bootError = "数据库打开失败：\(error)"
         }
+
+        // 依赖 store 的服务必须在 store 赋值之后构造。
+        compaction = CompactionService(store: store, runtime: runtime)
+        titles = TitleService(store: store, runtime: runtime)
 
         activeProfileID = UserDefaults.standard.string(forKey: "activeProfileID")
         activeModel = UserDefaults.standard.string(forKey: "activeModel") ?? ""
@@ -304,6 +309,74 @@ extension ProviderProfile {
         case .gemini: "gemini-2.5-flash"
         case .openAIResponses: "gpt-5"
         case .openAICompatible: "gpt-4o-mini"
+        }
+    }
+}
+
+// MARK: - 会话级操作：压缩 / 统计 / 导出 / 标题
+
+struct SessionStats: Sendable {
+    var usage: TokenUsage?
+    var costUSD: Double?
+    var messageCount: Int
+    var model: String
+}
+
+extension AppEnvironment {
+    /// 压缩较早的历史。返回被压掉的消息数，nil 表示不值得压。
+    func compactCurrentSession() async -> Int? {
+        guard let chat = chat, let profile = activeProfile else { return nil }
+        let outcome = try? await compaction.compact(
+            .init(
+                sessionID: chat.sessionID,
+                provider: profile.id,
+                model: activeModel
+            )
+        )
+        guard let outcome else { return nil }
+        await chat.reload()
+        return outcome.shadowedCount
+    }
+
+    func currentStats() async -> SessionStats? {
+        guard let chat else { return nil }
+        let usage = try? await store.totalUsage(for: chat.sessionID)
+        let projection = (try? await store.projection(for: chat.sessionID)) ?? SurfaceProjection()
+        return SessionStats(
+            usage: usage,
+            costUSD: usage.flatMap { PriceTable.estimate($0, model: activeModel).amountUSD },
+            messageCount: projection.messages.count,
+            model: activeModel
+        )
+    }
+
+    func exportCurrentSession() async -> String? {
+        guard let session = currentSession else { return nil }
+        let projection = (try? await store.projection(for: session.id)) ?? SurfaceProjection()
+        let usage = try? await store.totalUsage(for: session.id)
+        return SessionExporter.markdown(
+            session: session,
+            messages: projection.messages,
+            totalUsage: usage
+        )
+    }
+
+    /// 首轮对话结束后自动起标题。已经在用自定义标题就跳过。
+    func generateTitleIfNeeded(sessionID: SessionID) async {
+        guard let profile = activeProfile else { return }
+        guard let projection = try? await store.projection(for: sessionID) else { return }
+        // 只在首轮之后触发：消息太多说明早就该起过名了（多半是失败过）。
+        guard projection.messages.count <= 4 else { return }
+        guard projection.messages.contains(where: { $0.role == .assistant }) else { return }
+
+        if let title = await titles.generateTitle(
+            sessionID: sessionID,
+            provider: profile.id,
+            model: activeModel
+        ) {
+            if let current = currentSession, current.id == sessionID {
+                currentSession?.title = title
+            }
         }
     }
 }

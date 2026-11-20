@@ -105,3 +105,18 @@ final class SurfaceProjectionTests: XCTestCase {
         XCTAssertEqual(SurfaceProjection.build(from: records).lastAssistantSeq, 1)
     }
 }
+
+extension SurfaceProjectionTests {
+    /// 替换节点占据原位置，不追加到队尾。
+    func testReplaceKeepsPositionOfReplacedRange() {
+        let records = [
+            record(0, .userMessage(text("一", role: .user)), .append),
+            record(1, .assistantMessage(text("二", role: .assistant), usage: nil, interrupted: false), .append),
+            record(2, .userMessage(text("三", role: .user)), .append),
+            record(3, .userMessage(text("摘要", role: .context)), .replace(startSeq: 0, endSeq: 1))
+        ]
+        let projection = SurfaceProjection.build(from: records)
+        XCTAssertEqual(projection.messages.map(\.visibleText), ["摘要", "三"])
+        XCTAssertEqual(projection.messageSeqs, [3, 2])
+    }
+}

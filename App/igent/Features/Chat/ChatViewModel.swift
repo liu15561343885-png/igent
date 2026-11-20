@@ -19,6 +19,9 @@ final class ChatViewModel {
     /// 已经收到首个 token 前显示"正在输入"。
     private(set) var isThinking = false
     private(set) var lastError: String?
+    /// 最近一轮的用量与估算成本，用于输入框上方的状态条。
+    private(set) var lastTurnUsage: TokenUsage?
+    private(set) var lastTurnCost: Double?
 
     var draft = ""
     /// 本轮是否先联网检索。
@@ -41,6 +44,7 @@ final class ChatViewModel {
     private static let flushInterval: TimeInterval = 1.0 / 30.0
     private var pending = ""
     private var lastFlush = Date.distantPast
+    private var lastModel = ""
 
     init(
         sessionID: SessionID,
@@ -67,6 +71,11 @@ final class ChatViewModel {
 
     func removePendingImage() {
         pendingImage = nil
+    }
+
+    /// 压缩之后表面变了，需要重新读一遍投影。
+    func reload() async {
+        messages = (try? await store.projection(for: sessionID).messages) ?? messages
     }
 
     func load() async {
@@ -112,6 +121,7 @@ final class ChatViewModel {
         effective.system = SkillRenderer.system(skills)
         pendingSkill = nil
 
+        lastModel = effective.model
         streamTask = Task { [weak self] in
             guard let self else { return }
             var outgoing = blocks
@@ -193,6 +203,10 @@ final class ChatViewModel {
             isThinking = false
             streamingText = ""
             messages = result.projection.messages
+            lastTurnUsage = result.usage
+            lastTurnCost = result.usage.flatMap {
+                PriceTable.estimate($0, model: lastModel).amountUSD
+            }
             if case let .error(failure) = result.finish {
                 lastError = Self.describe(failure)
             }

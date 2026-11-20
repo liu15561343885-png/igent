@@ -8,6 +8,12 @@ struct ChatView: View {
 
     @State private var showSettings = false
     @State private var showSessions = false
+    @State private var showStats = false
+    @State private var showExport = false
+    @State private var stats: SessionStats?
+    @State private var exportText = ""
+    @State private var infoMessage: String?
+    @State private var isWorking = false
 
     private var draftBinding: Binding<String> {
         Binding(get: { model.draft }, set: { model.draft = $0 })
@@ -16,6 +22,7 @@ struct ChatView: View {
     var body: some View {
         VStack(spacing: 0) {
             transcript
+            usageBar
             composer
         }
         .background(Color(.systemBackground))
@@ -39,10 +46,31 @@ struct ChatView: View {
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showSettings = true } label: {
-                    Image(systemName: "slider.horizontal.3")
+                Menu {
+                    Button { showSettings = true } label: {
+                        Label("设置", systemImage: "slider.horizontal.3")
+                    }
+                    Divider()
+                    Button {
+                        Task { await compact() }
+                    } label: {
+                        Label("压缩上下文", systemImage: "arrow.down.right.and.arrow.up.left")
+                    }
+                    Button {
+                        Task { await loadStats() }
+                    } label: {
+                        Label("统计", systemImage: "chart.bar.xaxis")
+                    }
+                    Button {
+                        Task { await prepareExport() }
+                    } label: {
+                        Label("导出为 Markdown", systemImage: "square.and.arrow.up")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
                 }
-                .accessibilityLabel("设置")
+                .disabled(isWorking)
+                .accessibilityLabel("更多")
             }
         }
         .sheet(isPresented: $showSettings) {
@@ -51,6 +79,24 @@ struct ChatView: View {
         .sheet(isPresented: $showSessions) {
             SessionListView(currentSessionID: model.sessionID)
         }
+        .sheet(isPresented: $showStats) {
+            statsSheet
+        }
+        .sheet(isPresented: $showExport) {
+            exportSheet
+        }
+        .alert("提示", isPresented: Binding(
+            get: { infoMessage != nil },
+            set: { if !$0 { infoMessage = nil } }
+        )) {
+            Button("好") { infoMessage = nil }
+        } message: {
+            Text(infoMessage ?? "")
+        }
+        .task(id: model.messages.count) {
+            // 首轮结束后自动起标题；已经在用自定义标题时是空操作。
+            await env.generateTitleIfNeeded(sessionID: model.sessionID)
+        }
     }
 
     private var title: String {
@@ -58,6 +104,108 @@ struct ChatView: View {
             return env.isImageGenerationConfigured ? "生成图片" : "生成图片（未配置）"
         }
         return env.activeModel.isEmpty ? "未选择模型" : env.activeModel
+    }
+
+    /// 最近一轮的用量与估算成本。成本算不出来时只显示 token。
+    @ViewBuilder
+    private var usageBar: some View {
+        if let usage = model.lastTurnUsage {
+            HStack(spacing: 6) {
+                Text("本轮 ↑\(usage.billedInputTokens) ↓\(usage.outputTokens)")
+                if let cost = model.lastTurnCost {
+                    Text("· ≈$\(cost, format: .number.precision(.fractionLength(cost < 0.01 ? 4 : 3)))")
+                }
+                Spacer()
+            }
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 2)
+        }
+    }
+
+    private var statsSheet: some View {
+        NavigationStack {
+            List {
+                if let stats {
+                    Section("用量") {
+                        row("输入（未缓存）", "\(stats.usage?.uncachedInputTokens ?? 0)")
+                        row("缓存读", "\(stats.usage?.cacheReadTokens ?? 0)")
+                        row("输出", "\(stats.usage?.outputTokens ?? 0)")
+                    }
+                    Section("估算成本") {
+                        if let cost = stats.costUSD {
+                            row("合计", String(format: "≈ $%.4f", cost))
+                        } else {
+                            Text("价格表里没有 \(stats.model)，只显示 token。")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Section("会话") {
+                        row("消息数", "\(stats.messageCount)")
+                        row("模型", stats.model)
+                    }
+                }
+            }
+            .navigationTitle("统计")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("完成") { showStats = false }
+                }
+            }
+        }
+    }
+
+    private func row(_ title: String, _ value: String) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Text(value).foregroundStyle(.secondary)
+        }
+    }
+
+    private var exportSheet: some View {
+        NavigationStack {
+            ScrollView {
+                Text(exportText)
+                    .font(.system(.footnote, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
+            }
+            .navigationTitle("导出")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("完成") { showExport = false }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    ShareLink(item: exportText) {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                }
+            }
+        }
+    }
+
+    private func compact() async {
+        isWorking = true
+        let count = await env.compactCurrentSession()
+        isWorking = false
+        infoMessage = count.map { "已把 \($0) 条历史压成一段要点。" }
+            ?? "消息太少，暂时不需要压缩。"
+    }
+
+    private func loadStats() async {
+        stats = await env.currentStats()
+        showStats = true
+    }
+
+    private func prepareExport() async {
+        exportText = await env.exportCurrentSession() ?? "（没有可导出的内容）"
+        showExport = true
     }
 
     private var composer: some View {

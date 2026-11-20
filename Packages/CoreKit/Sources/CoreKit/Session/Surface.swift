@@ -44,8 +44,12 @@ public struct SurfaceProjection: Sendable, Equatable {
                 case .append:
                     nodes.append((record.seq, message))
                 case let .replace(startSeq, endSeq):
+                    // 替换节点要占据**被替换区间的位置**，而不是追加到队尾。
+                    // 压缩历史时这个区别是致命的：摘要若跑到最后，就排在了它本该归纳的
+                    // "最近几轮"之后，模型会先读新对话再读摘要。
+                    let insertAt = nodes.firstIndex { $0.seq >= startSeq } ?? nodes.count
                     nodes.removeAll { $0.seq >= startSeq && $0.seq <= endSeq }
-                    nodes.append((record.seq, message))
+                    nodes.insert((record.seq, message), at: min(insertAt, nodes.count))
                 }
                 continue
             }
