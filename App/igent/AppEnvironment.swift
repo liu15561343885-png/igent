@@ -290,6 +290,18 @@ final class AppEnvironment {
         await applyDevKeysIfRequested()
         await seedDemoConversationIfRequested()
         let args = ProcessInfo.processInfo.arguments
+        // 模拟"引导页刚添加完厂商"这一步，用来复现空转圈。
+        if args.contains("-addProvider") {
+            await save(
+                profile: ProviderProfile.openAICompatible(
+                    id: "simtest",
+                    name: "Sim Test",
+                    baseURL: "https://api.openai.com/v1",
+                    capabilities: Capabilities(vision: true, reasoning: true, streamUsage: true)
+                ),
+                apiKey: "sk-sim"
+            )
+        }
         if let index = args.firstIndex(of: "-autoSend"), index + 1 < args.count {
             pendingAutoSend = args[index + 1]
         }
@@ -706,6 +718,10 @@ final class AppEnvironment {
             await reloadProviders()
             if activeProfileID == nil { activeProfileID = profile.id }
             if activeModel.isEmpty { activeModel = profile.defaultModel }
+
+            // 引导流程里没有会话：这里不补，界面会停在"有厂商但没 chat"的空转圈，
+            // 只能杀进程重开。之前的症状就是这么来的。
+            await ensureSession()
         } catch {
             bootError = "保存失败：\(error)"
         }

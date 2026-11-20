@@ -13,7 +13,11 @@ struct RootView: View {
                 } else if env.profiles.isEmpty {
                     onboarding
                 } else {
-                    ProgressView().controlSize(.large)
+                    // 兜底：有厂商却没有会话（引导完成、删光会话、或初始化顺序问题）。
+                    // 这里必须真的去建会话，否则就是一个永远转下去的圈。
+                    ProgressView()
+                        .controlSize(.large)
+                        .task { await env.ensureSession() }
                 }
             }
         }

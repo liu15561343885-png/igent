@@ -105,6 +105,7 @@
 | 会话标题被写成推理草稿 | 标题出现 `**Creating a title**`、`**Summarizing DeepSeek u` | 起标题/摘要/规划都取 `blocks.map(\.plainText)`，把 reasoning 也拼进去了；推理模型还会把 `max_tokens` 全用在推理上。新增 `answerText`（只取 text 块），三处改用 |
 | 标题残留 Markdown 与引号 | `「文档解析测试」。` 只剥掉一半 | 剥除逻辑分两轮按类别处理，`」。` 这种交错顺序漏掉。改成统一字符集循环剥到稳定 |
 | 模式行塞不下第四个药丸 | 「思考」被挤出屏幕或文字折行 | 四个药丸 + 两个附件图标超出宽度。附件合并成一个「＋」菜单，标签缩短为「联网」「生图」 |
+| 首次配置完 API 后一直转圈 | 引导页加完厂商，主界面永远转圈；必须杀进程重开 | 启动时 profiles 为空 → 跳过 `ensureSession`；加完厂商后 `profiles` 非空但 `chat` 仍为 nil，RootView 落到 `ProgressView` 死等。修法两层：`save(profile:)` 成功后补建会话，RootView 的兜底分支自己也触发 `ensureSession()` |
 
 ## 二、未修复（有意留下，附理由）
 
