@@ -6,12 +6,20 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		90F6408630AFF24600398904 /* CoreKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000017 /* CoreKit */; };
+		90F6408730AFF24600398904 /* LLMKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000019 /* LLMKit */; };
+		90F6408830AFF24600398904 /* StorageKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000021 /* StorageKit */; };
+		90F6408930AFF24600398904 /* AgentKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000023 /* AgentKit */; };
+		90F6408A30AFF24600398904 /* WebSeamKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000025 /* WebSeamKit */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		AA0000000000000000000005 /* igent.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = igent.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		AA0000000000000000000009 /* igent */ = {
+		AA0000000000000000000009 /* App/igent */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = App/igent;
 			sourceTree = "<group>";
@@ -23,6 +31,11 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				90F6408A30AFF24600398904 /* WebSeamKit in Frameworks */,
+				90F6408930AFF24600398904 /* AgentKit in Frameworks */,
+				90F6408830AFF24600398904 /* StorageKit in Frameworks */,
+				90F6408730AFF24600398904 /* LLMKit in Frameworks */,
+				90F6408630AFF24600398904 /* CoreKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -32,7 +45,7 @@
 		AA0000000000000000000002 = {
 			isa = PBXGroup;
 			children = (
-				AA0000000000000000000009 /* igent */,
+				AA0000000000000000000009 /* App/igent */,
 				AA0000000000000000000003 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -61,7 +74,7 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				AA0000000000000000000009 /* igent */,
+				AA0000000000000000000009 /* App/igent */,
 			);
 			name = igent;
 			packageProductDependencies = (

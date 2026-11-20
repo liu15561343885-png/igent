@@ -197,6 +197,11 @@ struct ProviderSettingsView: View {
     private var debugSection: some View {
         Section {
             NavigationLink {
+                SkillListView()
+            } label: {
+                Label("Skill", systemImage: "text.badge.plus")
+            }
+            NavigationLink {
                 RequestInspectorView()
             } label: {
                 Label("请求记录", systemImage: "waveform.path.ecg")

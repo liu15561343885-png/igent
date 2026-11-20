@@ -13,7 +13,11 @@ struct Composer: View {
     var webSearchEnabled: Bool
     var webSearchAvailable: Bool
     var isSearching: Bool
+    /// 已选中的 skill（只显示名字，下一轮生效）。
+    var pendingSkillName: String?
     var onToggleWebSearch: () -> Void
+    var onPickSkill: () -> Void
+    var onRemoveSkill: () -> Void
     var onSend: () -> Void
     var onStop: () -> Void
     var onPickImage: (Data) -> Void
@@ -57,7 +61,38 @@ struct Composer: View {
                 .transition(.opacity)
             }
 
+            if let pendingSkillName {
+                HStack(spacing: 8) {
+                    Label(pendingSkillName, systemImage: "text.badge.checkmark")
+                        .font(.caption.weight(.medium))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.accentColor.opacity(0.14), in: Capsule())
+                        .foregroundStyle(Color.accentColor)
+                    Button(action: onRemoveSkill) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("移除 skill")
+                    Spacer()
+                }
+                .padding(.horizontal, 14)
+            }
+
             HStack(alignment: .bottom, spacing: 10) {
+                if !isStreaming {
+                    Button(action: onPickSkill) {
+                        Image(systemName: "text.badge.plus")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(pendingSkillName == nil ? Color.secondary : Color.accentColor)
+                            .frame(width: 32, height: 32)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("选择 Skill")
+                }
+
                 if webSearchAvailable && !isStreaming {
                     Button(action: onToggleWebSearch) {
                         Image(systemName: "globe")

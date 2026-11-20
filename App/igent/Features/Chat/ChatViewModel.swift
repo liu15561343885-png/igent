@@ -24,6 +24,8 @@ final class ChatViewModel {
     /// 本轮是否先联网检索。
     var webSearchEnabled = false
     private(set) var isSearching = false
+    /// 手动指定的 skill（下一轮生效，发完即清）。
+    var pendingSkill: SkillDefinition?
     /// 待发送的图片（已归一化并落盘）。
     private(set) var pendingImage: ImageAttachmentRef?
 
@@ -74,7 +76,8 @@ final class ChatViewModel {
 
     func send(
         configuration: TurnOrchestrator.Configuration,
-        webSearch: (any WebSearchProvider)? = nil
+        webSearch: (any WebSearchProvider)? = nil,
+        skills: [SkillDefinition] = []
     ) {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let image = pendingImage
@@ -100,6 +103,12 @@ final class ChatViewModel {
         let query = text.isEmpty ? "图片" : text
         let useSearch = webSearchEnabled && webSearch != nil
 
+        // skill 是"指令"，注入 system 最合适：四族的 system 落点由 systemStyle 统一处理，
+        // 不必为此新增内容块类型。代价是每轮 system 变化，前缀缓存会失效。
+        var effective = configuration
+        effective.system = SkillRenderer.system(skills)
+        pendingSkill = nil
+
         streamTask = Task { [weak self] in
             guard let self else { return }
             var outgoing = blocks
@@ -120,7 +129,7 @@ final class ChatViewModel {
             let stream = await self.orchestrator.send(
                 outgoing,
                 in: self.sessionID,
-                configuration: configuration
+                configuration: effective
             )
             for await update in stream {
                 await self.consume(update)

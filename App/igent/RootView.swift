@@ -3,6 +3,7 @@ import SwiftUI
 struct RootView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var showDebugSettings = false
+    @State private var showDebugSkills = false
 
     var body: some View {
         NavigationStack {
@@ -23,10 +24,16 @@ struct RootView: View {
             if ProcessInfo.processInfo.arguments.contains("-openSettings") {
                 showDebugSettings = true
             }
+            if ProcessInfo.processInfo.arguments.contains("-openSkills") {
+                showDebugSkills = true
+            }
             #endif
         }
         .sheet(isPresented: $showDebugSettings) {
             ProviderSettingsView()
+        }
+        .sheet(isPresented: $showDebugSkills) {
+            NavigationStack { SkillListView() }
         }
     }
 

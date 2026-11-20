@@ -680,6 +680,27 @@ skill 只能**影响模型怎么说**，不能**让模型做什么**：
 
 因此从 DSH 生态直接搬来的 skill 若含工具语义，相关段落会被忽略。skill 详情页显式提示这一点，避免预期落差。
 
+### 9.6.1 实现记录：注入落点改了
+
+方案原本写的是"以 `context` 消息注入"。实际实现改成**注入 system**，理由：
+
+- 不需要为 skill 新增内容块类型（`ContextEvidence` 带 `<context>` 包装与来源列表，套在 skill 上语义不对）；
+- 四族的 system 落点已经被 `systemStyle` 统一处理（message / topLevel / systemInstruction），复用现成机制；
+- skill 本质就是指令，放 system 语义最正。
+
+代价：system 每轮都可能变化，厂商的系统提示前缀缓存会失效。多轮长对话里这项开销真实存在，
+但换来的是零新增事件类型、零新增渲染路径。
+
+其余按方案落地：
+
+| 项 | 实现 |
+|---|---|
+| 文件格式 | `Documents/Skills/<name>/SKILL.md` 或 `<name>.md`，frontmatter 同 DSH |
+| 随附文件 | 只注入 `include` 显式声明的内容，且有路径穿越防护 |
+| 自动路由 | **关键词 n-gram，不调模型**。中文没有空格，"用户提到周报"要切成 2~3 字片段才匹配得上"周报" |
+| 常驻 | 每轮注入，开关存 UserDefaults |
+| 首启示例 | 写一个 `concise-reply`，否则功能藏得太深 |
+
 ### 9.7 UI
 
 | 位置 | 内容 |
@@ -935,7 +956,7 @@ public struct RetryPolicy: Sendable {
 
 **关键路径**：P0 的 `StreamChunk` 契约和 `BlockAssembler` 一旦定错，后面阶段全部返工。建议 P0 先写 fixture 再写适配器（测试先行）。
 
-**进度**（2026-11-20）：P0 四族适配器；P1 会话与界面；P2 图片输入 + 图片生成（OpenAI Images / Gemini，同步两族）；P3 联网检索（Tavily / Brave + 抓取抽取 + 证据拼装）。**累计 180 单测**，五个包全绿。未做：图片生成的异步 job、skill、真实 Key 联调。
+**进度**（2026-11-20）：功能清单全部落地 —— 四族对话适配器、图片输入、图片生成（同步两族）、联网检索（Tavily/Brave + 抓取抽取）、Skill（三层激活）。**累计 204 单测**，六个包全绿。未做：图片生成的异步 job、真实 Key 联调。
 
 **P5 排在 P6 之前**：skill 依赖 `context/message` 与 surface 替换，这两样已在 P1 就位；而压缩（P6）需要把 skill 正文标记为 `ephemeral`，先有 skill 才好验证压缩是否正确丢弃。
 

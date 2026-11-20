@@ -9,6 +9,7 @@ struct ChatView: View {
     @State private var showSettings = false
     @State private var showSessions = false
     @State private var showImageGen = false
+    @State private var showSkillPicker = false
 
     private var draftBinding: Binding<String> {
         Binding(get: { model.draft }, set: { model.draft = $0 })
@@ -25,7 +26,10 @@ struct ChatView: View {
                 webSearchEnabled: model.webSearchEnabled,
                 webSearchAvailable: env.isWebSearchConfigured,
                 isSearching: model.isSearching,
+                pendingSkillName: model.pendingSkill?.summary.name,
                 onToggleWebSearch: { model.webSearchEnabled.toggle() },
+                onPickSkill: { showSkillPicker = true },
+                onRemoveSkill: { model.pendingSkill = nil },
                 onSend: send,
                 onStop: { model.stop() },
                 onPickImage: { data in
@@ -80,6 +84,9 @@ struct ChatView: View {
         }
         .sheet(isPresented: $showImageGen) {
             ImageGenView(model: model)
+        }
+        .sheet(isPresented: $showSkillPicker) {
+            skillPicker
         }
     }
 
@@ -165,13 +172,51 @@ struct ChatView: View {
             provider: profile.id,
             model: env.activeModel
         )
+        let skills = env.resolveSkills(pending: model.pendingSkill, text: model.draft)
         model.send(
             configuration: configuration,
-            webSearch: env.makeWebSearchProvider()
+            webSearch: env.makeWebSearchProvider(),
+            skills: skills
         )
     }
 
     /// 优先滚到最后一条消息（懒加载容器里它一定被创建），兜底滚到哨兵。
+    private var skillPicker: some View {
+        NavigationStack {
+            List {
+                if env.skillSummaries.isEmpty {
+                    ContentUnavailableView(
+                        "还没有 skill",
+                        systemImage: "text.badge.plus",
+                        description: Text("在设置里打开 Skill，把 SKILL.md 放进 Documents/Skills。")
+                    )
+                }
+                ForEach(env.skillSummaries) { summary in
+                    Button {
+                        model.pendingSkill = env.skillDefinitions[summary.name]
+                        showSkillPicker = false
+                    } label: {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(summary.name)
+                                .font(.callout.monospaced())
+                                .foregroundStyle(.primary)
+                            Text(summary.description)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("选择 Skill")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { showSkillPicker = false }
+                }
+            }
+        }
+    }
+
     private func scrollToLast(_ proxy: ScrollViewProxy, animated: Bool = false) {
         let target: AnyHashable = model.messages.last.map { AnyHashable($0.id) } ?? AnyHashable(Anchor.bottom)
         let action = { proxy.scrollTo(target, anchor: .bottom) }

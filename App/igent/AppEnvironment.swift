@@ -2,6 +2,7 @@ import AgentKit
 import CoreKit
 import Foundation
 import LLMKit
+import AgentKit
 import Observation
 import StorageKit
 import UIKit
@@ -17,6 +18,11 @@ final class AppEnvironment {
     let keychain: Keychain
     /// 图片附件（内容寻址）。
     let attachments: AttachmentStore
+    /// skill 注册表（扫 Documents/Skills）。
+    let skillRegistry: SkillRegistry
+    /// 已加载 skill 的同步快照，供发送时拼 system。
+    var skillDefinitions: [String: SkillDefinition] = [:]
+    var skillSummaries: [SkillSummary] = []
     /// 所有厂商请求的旁路记录，供请求检查器展示。
     let requestLog = RequestLog()
 
@@ -51,6 +57,9 @@ final class AppEnvironment {
         runtime = LlmRuntime()
         attachments = (try? AttachmentStore(root: databaseURL.deletingLastPathComponent().appendingPathComponent("Attachments")))
             ?? (try! AttachmentStore(root: FileManager.default.temporaryDirectory.appendingPathComponent("Attachments")))
+        skillRegistry = SkillRegistry(
+            provider: FileSystemSkillProvider(root: Self.skillsRoot)
+        )
 
         do {
             let store = try SessionStore(url: databaseURL)
@@ -83,6 +92,7 @@ final class AppEnvironment {
         if activeModel.isEmpty {
             activeModel = activeProfile?.defaultModel ?? ""
         }
+        await reloadSkills()
         await ensureSession()
         #if DEBUG
         await seedDemoConversationIfRequested()
