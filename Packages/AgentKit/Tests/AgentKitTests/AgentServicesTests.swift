@@ -233,3 +233,45 @@ final class SessionExporterTests: XCTestCase {
         XCTAssertEqual(SessionExporter.filename(for: dirty), "a-b-c.md")
     }
 }
+
+final class AnswerTextTests: XCTestCase {
+    /// 推理模型的 reasoning 排在 text 前面且占用 max_tokens。
+    /// 辅助调用只看 text，否则标题会写成推理草稿（线上真的出现过）。
+    func testAnswerTextSkipsReasoning() {
+        let blocks: [ContentBlock] = [
+            .reasoning("**Creating a title**"),
+            .text("柴犬插画生成")
+        ]
+        XCTAssertEqual(blocks.answerText, "柴犬插画生成")
+    }
+
+    func testAnswerTextJoinsMultipleTextBlocks() {
+        let blocks: [ContentBlock] = [.text("一"), .text("二")]
+        XCTAssertEqual(blocks.answerText, "一二")
+    }
+
+    func testAnswerTextIgnoresNonTextBlocks() {
+        let blocks: [ContentBlock] = [
+            .providerBlock(ProviderBlock(type: "research_step", payload: .null)),
+            .context(ContextEvidence(query: "q", sources: [], digest: "d", fetchedAt: Date(), truncated: false)),
+            .text("答案")
+        ]
+        XCTAssertEqual(blocks.answerText, "答案")
+    }
+}
+
+final class TitleCleanTests: XCTestCase {
+    /// 模型爱加的 Markdown 强调符号要剥掉。
+    func testStripsEmphasisMarkers() {
+        XCTAssertEqual(TitleService.clean("**柴犬插画**"), "柴犬插画")
+        XCTAssertEqual(TitleService.clean("# 标题"), "标题")
+    }
+
+    func testStripsQuotesAndPeriods() {
+        XCTAssertEqual(TitleService.clean("「文档解析测试」。"), "文档解析测试")
+    }
+
+    func testRejectsEmpty() {
+        XCTAssertNil(TitleService.clean("   "))
+    }
+}

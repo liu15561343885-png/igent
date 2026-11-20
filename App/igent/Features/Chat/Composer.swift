@@ -374,7 +374,10 @@ struct Composer: View {
     private var modeChips: some View {
         Group {
             // 模型放最前：它决定了后面几项是否可用，先看到它更顺。
-            modelChip
+            // 生图模式下对话模型不参与，隐藏它给图片模型名腾位置。
+            if !imageMode {
+                modelChip
+            }
 
             modeChip(
                 title: "联网",

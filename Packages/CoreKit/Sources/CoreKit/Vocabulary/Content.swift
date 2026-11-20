@@ -133,6 +133,19 @@ public struct DocumentAttachment: Codable, Sendable, Equatable {
     }
 }
 
+public extension Array where Element == ContentBlock {
+    /// 只要**答案正文**，不含思维链。
+    ///
+    /// 辅助调用（起标题、压缩摘要、检索规划）必须用它。推理模型的 reasoning 会排在
+    /// text 前面并占用 max_tokens，混进来会把标题写成 "**Creating a title**" 这类
+    /// 推理草稿——线上已经出现过这种标题。
+    var answerText: String {
+        compactMap { block -> String? in
+            if case let .text(text) = block { text } else { nil }
+        }.joined()
+    }
+}
+
 /// 厂商私有的不透明块。
 ///
 /// 我们不解析它的语义，只保证两件事：原样存进事件日志、原样拼回下一次请求。

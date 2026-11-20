@@ -97,6 +97,15 @@
 | 三个 `*Revision` 计数器无人读取 | 删掉计数器，把 `imageSettings` / `searchMode` / `documentPurpose` 改成 `@Observable` 存储属性——观察能力本来就不该靠计数器补 |
 | `GenerateOptions.reasoning` 写了没人读 | 四族各自映射：Chat Completions `reasoning_effort`、Responses `reasoning.effort`、Anthropic `thinking.budget_tokens`、Gemini `thinkingConfig.thinkingBudget`；未声明推理能力时不发 |
 
+## 一·补 真机联调发现并修复的问题（同日，真实 Key）
+
+| 缺陷 | 现象 | 根因与修复 |
+|---|---|---|
+| 每次启动都新建会话 | 每次重开 App 都是空对话，历史永远接不上 | `ensureSession` 无条件新建。改成恢复最近一个**有内容**的会话，并清理空会话 |
+| 会话标题被写成推理草稿 | 标题出现 `**Creating a title**`、`**Summarizing DeepSeek u` | 起标题/摘要/规划都取 `blocks.map(\.plainText)`，把 reasoning 也拼进去了；推理模型还会把 `max_tokens` 全用在推理上。新增 `answerText`（只取 text 块），三处改用 |
+| 标题残留 Markdown 与引号 | `「文档解析测试」。` 只剥掉一半 | 剥除逻辑分两轮按类别处理，`」。` 这种交错顺序漏掉。改成统一字符集循环剥到稳定 |
+| 模式行塞不下第四个药丸 | 「思考」被挤出屏幕或文字折行 | 四个药丸 + 两个附件图标超出宽度。附件合并成一个「＋」菜单，标签缩短为「联网」「生图」 |
+
 ## 二、未修复（有意留下，附理由）
 
 | 项 | 位置 | 说明 |
@@ -123,7 +132,7 @@
 
 ## 四、测试与覆盖
 
-- 全量：**316 单测**，六个目标全绿。
+- 全量：**322 单测**，六个目标全绿。
 - 干净构建：0 警告（修掉了 7 处 `try?` 未使用告警）。
 - 本轮新增回归测试：附件清理保留引用文件、连续两次压缩、空响应、错误分类、日志脱敏、`invalidRequest` 分支。
 - 仍无覆盖：Keychain（需真机）、迁移升级路径、真实网络。

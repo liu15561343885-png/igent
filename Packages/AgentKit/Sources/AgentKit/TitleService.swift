@@ -61,7 +61,7 @@ public actor TitleService {
             // 起标题失败不值得打扰用户。
             return nil
         }
-        let raw = ((try? assembler.blocks()) ?? []).map(\.plainText).joined()
+        let raw = (try? assembler.blocks())?.answerText ?? ""
         guard let title = Self.clean(raw) else { return nil }
 
         try? await store.rename(sessionID, to: title)
@@ -71,13 +71,14 @@ public actor TitleService {
     /// 去掉模型爱加的花边：引号、书名号、结尾句号、换行。
     static func clean(_ raw: String) -> String? {
         var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        // 推理草稿常带 **加粗**、# 标题；模型偶尔也会学样。
+        text = text.trimmingCharacters(in: CharacterSet(charactersIn: "*#_` "))
         text = text.components(separatedBy: .newlines).first ?? text
-        let wrappers: [Character] = ["\"", "'", "“", "”", "「", "」", "《", "》", "‘", "’"]
-        while let first = text.first, wrappers.contains(first) { text.removeFirst() }
-        while let last = text.last, wrappers.contains(last) { text.removeLast() }
-        text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        while let last = text.last, "。.!！".contains(last) { text.removeLast() }
-        text = text.trimmingCharacters(in: .whitespaces)
+        // 引号、句号、Markdown 强调可能以任意顺序堆在两端（"「标题」。"），
+        // 分两轮按类别剥会漏；统一成一个字符集循环剥到稳定为止。
+        let trivia = Set("\"'“”「」《》‘’。.!！*#_` ")
+        while let first = text.first, trivia.contains(first) { text.removeFirst() }
+        while let last = text.last, trivia.contains(last) { text.removeLast() }
 
         guard !text.isEmpty else { return nil }
         return String(text.prefix(24))

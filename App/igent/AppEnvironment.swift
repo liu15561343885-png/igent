@@ -272,7 +272,18 @@ final class AppEnvironment {
         // 没有任何厂商时不建会话：RootView 靠 "无会话且无厂商" 判定首次引导，
         // 先建会话会让引导一闪而过。
         if !profiles.isEmpty {
+            // 联调时强制开新会话：必须在 ensureSession 之前决定，
+            // 否则视图会先用恢复的会话渲染一次，自动发送就落到旧会话里。
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-newSession") {
+                await startNewSession()
+            } else {
+                await ensureSession()
+            }
+            #else
             await ensureSession()
+            #endif
+            await pruneEmptySessions()
         }
         await pruneOrphanAttachments()
         #if DEBUG
@@ -284,6 +295,12 @@ final class AppEnvironment {
         }
         if args.contains("-autoSearch") {
             chat?.webSearchEnabled = true
+        }
+        if args.contains("-autoResearch") {
+            searchMode = .deepResearch
+        }
+        if args.contains("-autoQuickSearch") {
+            searchMode = .quick
         }
         if args.contains("-autoImage") {
             chat?.setImageMode(true)
@@ -300,6 +317,21 @@ final class AppEnvironment {
         if args.contains("-interject") {
             streamingInput = .interject
             chat?.streamingInputMode = .interject
+        }
+        // 联调插话：等首轮开始流式后，再塞一句话进去。
+        if let index = args.firstIndex(of: "-autoInterject"), index + 1 < args.count {
+            let text = args[index + 1]
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(6))
+                _ = self?.chat?.interject(text)
+            }
+        }
+        if let index = args.firstIndex(of: "-autoQueue"), index + 1 < args.count {
+            let text = args[index + 1]
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(6))
+                _ = self?.chat?.enqueue(text)
+            }
         }
         if ProcessInfo.processInfo.arguments.contains("-queue") {
             streamingInput = .queue
@@ -488,7 +520,31 @@ final class AppEnvironment {
 
     func ensureSession() async {
         guard currentSession == nil else { return }
+
+        // 恢复最近一次**有内容**的会话。以前这里无条件新建，
+        // 结果每次启动都换一个空会话，历史永远接不上。
+        let recent = (try? await store.sessions()) ?? []
+        for session in recent {
+            let projection = try? await store.projection(for: session.id)
+            if let projection, !projection.messages.isEmpty {
+                await open(session: session)
+                return
+            }
+        }
         await startNewSession()
+    }
+
+    /// 清掉没有任何事件、标题仍是"新对话"的空会话。
+    /// 以前每次启动都会留一个，列表很快就全是空壳。
+    func pruneEmptySessions() async {
+        guard let recent = try? await store.sessions() else { return }
+        for session in recent where session.title == "新对话" {
+            guard session.id != currentSession?.id else { continue }
+            guard let projection = try? await store.projection(for: session.id) else { continue }
+            if projection.messages.isEmpty {
+                try? await store.delete(session.id)
+            }
+        }
     }
 
     func startNewSession() async {

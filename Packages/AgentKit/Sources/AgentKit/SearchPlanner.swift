@@ -73,7 +73,7 @@ public actor SearchPlanner {
         } catch {
             return nil
         }
-        let text = ((try? assembler.blocks()) ?? []).map(\.plainText).joined()
+        let text = (try? assembler.blocks())?.answerText ?? ""
         return Self.parse(text)
     }
 

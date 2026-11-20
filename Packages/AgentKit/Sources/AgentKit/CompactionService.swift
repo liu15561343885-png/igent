@@ -113,9 +113,7 @@ public actor CompactionService {
             if case let .usage(value) = chunk { usage = value }
         }
 
-        let summary = ((try? assembler.blocks()) ?? [])
-            .map(\.plainText)
-            .joined()
+        let summary = ((try? assembler.blocks())?.answerText ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !summary.isEmpty else { throw CompactionError.emptySummary }
 
