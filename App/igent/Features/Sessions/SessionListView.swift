@@ -11,6 +11,11 @@ struct SessionListView: View {
 
     @State private var sessions: [SessionSummary] = []
 
+    private static var topSafeInset: CGFloat {
+        (UIApplication.shared.connectedScenes.first as? UIWindowScene)?
+            .windows.first?.safeAreaInsets.top ?? 59
+    }
+
     private func close() {
         if let onClose { onClose() } else { dismiss() }
     }
@@ -35,7 +40,8 @@ struct SessionListView: View {
                     .font(.subheadline)
             }
             .padding(.horizontal, 16)
-            .padding(.top, 14)
+            // 抽屉跨满整屏，得自己避开状态栏/灵动岛。
+            .padding(.top, Self.topSafeInset + 10)
             .padding(.bottom, 10)
 
             Divider()

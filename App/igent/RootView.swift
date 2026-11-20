@@ -1,3 +1,4 @@
+import CoreKit
 import SwiftUI
 import UIKit
 
@@ -7,6 +8,17 @@ struct RootView: View {
     @State private var showDebugSkills = false
 
     var body: some View {
+        ZStack(alignment: .leading) {
+            navigationRoot
+
+            if env.showSessionDrawer {
+                sessionDrawer
+            }
+        }
+        .animation(.spring(response: 0.32, dampingFraction: 0.86), value: env.showSessionDrawer)
+    }
+
+    private var navigationRoot: some View {
         NavigationStack {
             Group {
                 if let chat = env.chat {
@@ -46,6 +58,60 @@ struct RootView: View {
         .sheet(isPresented: $showDebugSkills) {
             NavigationStack { SkillListView() }
         }
+    }
+
+    /// 左侧会话抽屉。
+    ///
+    /// 放在外壳层而不是页面里：只有这样才能盖住导航栏，
+    /// 让抽屉的标题栏占住原本导航栏的位置。
+    private var sessionDrawer: some View {
+        ZStack(alignment: .leading) {
+            Color.black.opacity(0.22)
+                .ignoresSafeArea()
+                .transition(.opacity)
+                .onTapGesture { closeDrawer() }
+
+            SessionListView(
+                currentSessionID: env.chat?.sessionID ?? UUID(),
+                onClose: { closeDrawer() }
+            )
+            .frame(width: 320)
+            .background(.regularMaterial)
+            .clipShape(
+                UnevenRoundedRectangle(
+                    topLeadingRadius: 0,
+                    bottomLeadingRadius: 0,
+                    bottomTrailingRadius: 24,
+                    topTrailingRadius: 24,
+                    style: .continuous
+                )
+            )
+            .overlay(alignment: .trailing) {
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            colors: [.white.opacity(0.5), .white.opacity(0.05)],
+                            startPoint: .top, endPoint: .bottom
+                        )
+                    )
+                    .frame(width: 1)
+                    .allowsHitTesting(false)
+            }
+            .shadow(color: .black.opacity(0.24), radius: 22, x: 8, y: 0)
+            .ignoresSafeArea(edges: .vertical)
+            .transition(.move(edge: .leading))
+            .gesture(
+                DragGesture(minimumDistance: 12)
+                    .onEnded { value in
+                        if value.translation.width < -60 { closeDrawer() }
+                    }
+            )
+        }
+        .zIndex(2)
+    }
+
+    private func closeDrawer() {
+        env.showSessionDrawer = false
     }
 
     /// 第一次启动：没有厂商时的引导页。

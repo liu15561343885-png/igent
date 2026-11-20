@@ -98,7 +98,7 @@ struct Composer: View {
             modeRow
         }
         .padding(.vertical, 8)
-        .background(.ultraThinMaterial)
+        .glass(cornerRadius: 0, showsShadow: false)
     }
 
     // MARK: - 上方状态区

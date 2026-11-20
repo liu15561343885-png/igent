@@ -145,6 +145,9 @@ final class AppEnvironment {
         }
     }
 
+    /// 会话抽屉是否展开。放在外壳层，抽屉才能盖住导航栏。
+    var showSessionDrawer = false
+
     /// 生成中发送消息的语义：关闭 / 插话 / 排队。两者互斥，由这里强制。
     var streamingInput: ChatViewModel.StreamingInputMode {
         didSet {

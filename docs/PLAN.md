@@ -701,8 +701,13 @@ GPT：基于这些事实写最终答案
 - 对话页背景改为淡渐变——纯色底上玻璃没有层次可透。
 
 **会话管理改为左侧抽屉**：`.sheet` 是从底部弹，用户要的是侧边栏。
-ZStack + `move(edge: .leading)` + 遮罩点击关闭 + 左滑关闭。
-抽屉不跨安全区（跨了标题栏会被导航栏盖住），标题栏自己画，不套 NavigationStack。
+抽屉挂在**外壳层**（RootView），不是页面内——只有这样才能盖住导航栏，
+让抽屉标题栏占住原本导航栏的位置。`move(edge: .leading)` + 遮罩点击关闭 + 左滑关闭；
+标题栏自绘、不套 NavigationStack（套了「完成」会漏到抽屉外）；跨安全区后按状态栏高度补内边距。
+
+**条件编译骨架**：`GlassSurface.swift` 用 `#if compiler(>=6.2)` + `if #available(iOS 26.0, *)`
+在 Xcode 26 上切到 `glassEffect(.regular.tint(_:).interactive(), in:)`，否则走近似实现。
+⚠️ iOS 26 分支**本机无法编译验证**，签名若有出入只需改 `GlassModifier` 一行。
 
 ### 8.2 两条路径统一成 `context/message`
 
