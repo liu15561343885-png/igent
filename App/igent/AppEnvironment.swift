@@ -59,6 +59,11 @@ final class AppEnvironment {
         didSet { UserDefaults.standard.set(showInternals, forKey: "showInternals") }
     }
 
+    /// 是否允许在生成过程中插话（打断并改方向）。
+    var interjectEnabled: Bool {
+        didSet { UserDefaults.standard.set(interjectEnabled, forKey: "interjectEnabled") }
+    }
+
     /// 回答完成后是否自动收起思维链。关掉则保持展开，由用户手动折。
     var autoCollapseReasoning: Bool {
         didSet { UserDefaults.standard.set(autoCollapseReasoning, forKey: "autoCollapseReasoning") }
@@ -118,6 +123,7 @@ final class AppEnvironment {
 
         autoCompactionEnabled = UserDefaults.standard.object(forKey: "autoCompaction") as? Bool ?? true
         showInternals = UserDefaults.standard.object(forKey: "showInternals") as? Bool ?? true
+        interjectEnabled = UserDefaults.standard.object(forKey: "interjectEnabled") as? Bool ?? false
         autoCollapseReasoning = UserDefaults.standard.object(forKey: "autoCollapseReasoning") as? Bool ?? true
         showUsageBubble = UserDefaults.standard.object(forKey: "showUsageBubble") as? Bool ?? true
         if let raw = UserDefaults.standard.stringArray(forKey: "usageBubbleItems") {
@@ -156,6 +162,14 @@ final class AppEnvironment {
         await pruneOrphanAttachments()
         #if DEBUG
         await seedDemoConversationIfRequested()
+        if ProcessInfo.processInfo.arguments.contains("-interject") {
+            interjectEnabled = true
+            chat?.interjectEnabled = true
+        }
+        if ProcessInfo.processInfo.arguments.contains("-fakeStreaming") {
+            let draft = ProcessInfo.processInfo.arguments.contains("-withDraft") ? "换个角度，别只讲发布" : ""
+            chat?.debugEnterStreaming(draft: draft)
+        }
         #endif
     }
 
@@ -355,6 +369,7 @@ final class AppEnvironment {
             attachments: attachments,
             planner: planner
         )
+        model.interjectEnabled = interjectEnabled
         await model.load()
         chat = model
     }

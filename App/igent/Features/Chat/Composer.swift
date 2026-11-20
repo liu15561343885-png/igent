@@ -38,6 +38,9 @@ struct Composer: View {
     var onStop: () -> Void
     var onPickImage: (Data) -> Void
     var onRemoveImage: () -> Void
+    var interjectEnabled: Bool
+    var onInterject: () -> Void
+
     var onPickDocuments: ([URL]) -> Void
     var onRemoveDocument: (UUID) -> Void
 
@@ -53,7 +56,9 @@ struct Composer: View {
     }
 
     private var placeholder: String {
-        imageMode ? "描述你想要的画面…" : "发消息…"
+        if imageMode { return "描述你想要的画面…" }
+        if isStreaming, interjectEnabled { return "插话以调整方向…" }
+        return "发消息…"
     }
 
     var body: some View {
@@ -195,7 +200,7 @@ struct Composer: View {
                 )
                 .focused($isFocused)
                 .submitLabel(.send)
-                .disabled(isStreaming || isBusy)
+                .disabled((isStreaming && !interjectEnabled) || isBusy)
 
             sendButton
         }
@@ -228,9 +233,34 @@ struct Composer: View {
     }
 
     private var sendButton: some View {
+        HStack(spacing: 6) {
+            if isStreaming, interjectEnabled, canSend {
+                // 有内容时主按钮是"插话"，停止退成旁边那个小按钮——
+                // 想打断但没话说的人应该按停止，这两个动作不能混。
+                Button(action: onStop) {
+                    Image(systemName: "stop.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 28, height: 28)
+                        .background(Circle().fill(Color.primary.opacity(0.08)))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("停止生成")
+            }
+
+            primaryButton
+        }
+        .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isStreaming)
+    }
+
+    private var primaryButton: some View {
         Button {
             if isStreaming {
-                onStop()
+                if interjectEnabled, canSend {
+                    onInterject()
+                } else {
+                    onStop()
+                }
             } else {
                 onSend()
             }
@@ -239,7 +269,7 @@ struct Composer: View {
                 if isBusy {
                     ProgressView().controlSize(.small)
                 } else {
-                    Image(systemName: isStreaming ? "stop.fill" : "arrow.up")
+                    Image(systemName: isStreaming && !(interjectEnabled && canSend) ? "stop.fill" : "arrow.up")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(.white)
                 }
@@ -248,9 +278,12 @@ struct Composer: View {
             .background(Circle().fill(buttonFill))
         }
         .buttonStyle(.plain)
-        .disabled(!isStreaming && (!canSend || isBusy))
-        .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isStreaming)
-        .accessibilityLabel(isStreaming ? "停止生成" : (imageMode ? "生成图片" : "发送"))
+        .disabled(isStreaming ? (!canSend && !interjectEnabled) : (!canSend || isBusy))
+        .accessibilityLabel(
+            isStreaming
+                ? (interjectEnabled && canSend ? "插话" : "停止生成")
+                : (imageMode ? "生成图片" : "发送")
+        )
     }
 
     private var buttonFill: AnyShapeStyle {

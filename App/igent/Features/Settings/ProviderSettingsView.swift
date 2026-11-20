@@ -20,6 +20,7 @@ struct ProviderSettingsView: View {
                 imageSection
                 webSearchSection
                 documentSection
+                interactionSection
                 compactionSection
                 displaySection
                 debugSection
@@ -219,6 +220,20 @@ struct ProviderSettingsView: View {
             Text("图片生成")
         } footer: {
             Text("与对话厂商分开配置：对话可以用 DeepSeek，画图用 OpenAI。OpenAI 填 gpt-image-1 或 dall-e-3；Gemini 填 gemini-2.5-flash-image，Base URL 填到 v1beta。")
+        }
+    }
+
+    @ViewBuilder
+    private var interactionSection: some View {
+        Section {
+            Toggle("允许生成中插话", isOn: Binding(
+                get: { env.interjectEnabled },
+                set: { env.interjectEnabled = $0 }
+            ))
+        } header: {
+            Text("交互")
+        } footer: {
+            Text("开启后，模型思考或输出时也能输入并发送。插话会打断当前这一轮，把这句话作为新指示接着生成——已经说出的部分会保留在上下文里，不会被当成没发生。")
         }
     }
 

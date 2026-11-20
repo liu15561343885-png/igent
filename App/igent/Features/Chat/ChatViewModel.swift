@@ -48,6 +48,20 @@ final class ChatViewModel {
     private(set) var parsingStatus: String?
     /// 回合序号。停止时的兜底逻辑靠它判断"是否已经开了新回合"，避免误清新回合的状态。
     private var turnCounter = 0
+    /// 插话：打断当前回合后要接着发出去的那句话。
+    private(set) var pendingInterjection: String?
+    /// 是否允许在生成过程中插话（设置项）。
+    var interjectEnabled = false
+    /// 上一轮的参数。插话要原样重开一轮，不能用当前界面状态猜。
+    private struct TurnInputs {
+        var configuration: TurnOrchestrator.Configuration
+        var webSearch: (any WebSearchProvider)?
+        var webFetch: (any WebFetchProvider)?
+        var research: WebResearch?
+        var skills: [SkillDefinition]
+        var serverTools: [ServerToolRequest]
+    }
+    private var lastInputs: TurnInputs?
 
     private let store: SessionStore
     private let orchestrator: TurnOrchestrator
@@ -231,9 +245,18 @@ final class ChatViewModel {
         webFetch: (any WebFetchProvider)?,
         research: WebResearch?,
         skills: [SkillDefinition],
-        serverTools: [ServerToolRequest]
+        serverTools: [ServerToolRequest],
+        interjected: Bool = false
     ) {
         turnCounter += 1
+        lastInputs = TurnInputs(
+            configuration: configuration,
+            webSearch: webSearch,
+            webFetch: webFetch,
+            research: research,
+            skills: skills,
+            serverTools: serverTools
+        )
         isStreaming = true
         isThinking = true
         searchSkipped = false
@@ -258,6 +281,11 @@ final class ChatViewModel {
         // 不必为此新增内容块类型。代价是每轮 system 变化，前缀缓存会失效。
         var effective = configuration
         effective.system = SkillRenderer.system(skills)
+
+        if interjected {
+            // 插话不是新话题，是"改方向"。明说这一点，模型才不会把前半段当没发生过。
+            effective.system = InterjectHint.system(base: effective.system)
+        }
         effective.serverTools = serverTools
         pendingSkill = nil
 
@@ -363,6 +391,40 @@ final class ChatViewModel {
         lastError = message
     }
 
+    /// 插话：打断当前生成，把这句话作为新指示接着发出去。
+    ///
+    /// 各家 API 都没有"边生成边追加指令"的能力，所以只能中断后重开一轮；
+    /// 中断时编排器会把已产出的前缀落库（interrupted），模型因此仍能看到自己说到哪。
+    @discardableResult
+    func interject(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, isStreaming, !isParsingDocument, lastInputs != nil else {
+            return false
+        }
+        pendingInterjection = trimmed
+        draft = ""
+        stop()
+        return true
+    }
+
+    /// 把待发的插话接着发出去。
+    private func flushInterjection() {
+        guard let pending = pendingInterjection, let inputs = lastInputs else { return }
+        pendingInterjection = nil
+        startTurn(
+            text: InterjectHint.userText(pending),
+            image: nil,
+            documents: [],
+            configuration: inputs.configuration,
+            webSearch: inputs.webSearch,
+            webFetch: inputs.webFetch,
+            research: inputs.research,
+            skills: inputs.skills,
+            serverTools: inputs.serverTools,
+            interjected: true
+        )
+    }
+
     func stop() {
         if isParsingDocument {
             // 解析阶段直接掐断；已经选中的文件不再恢复（需要重新选）。
@@ -391,6 +453,7 @@ final class ChatViewModel {
             self.streamingReasoning = ""
             self.pending = ""
             await self.reload()
+            self.flushInterjection()
         }
     }
 
@@ -438,8 +501,21 @@ final class ChatViewModel {
             }
             await refreshMetrics()
             streamTask = nil
+            // 插话是在取消之后才发的：等这一轮的收尾（部分内容已落库）完成再开新回合。
+            flushInterjection()
         }
     }
+
+    #if DEBUG
+    /// 仅用于截图验证流式中的输入条布局（无法在没有真实 Key 时进入流式状态）。
+    func debugEnterStreaming(draft: String = "") {
+        isStreaming = true
+        isThinking = false
+        streamingText = "正在整理资料，稍等一下。"
+        self.draft = draft
+        if !draft.isEmpty { self.draft = draft }
+    }
+    #endif
 
     // MARK: - 图片生成
 

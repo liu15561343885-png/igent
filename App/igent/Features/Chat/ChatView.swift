@@ -283,6 +283,13 @@ struct ChatView: View {
                 Task { await model.attach(data) }
             },
             onRemoveImage: { model.removePendingImage() },
+            interjectEnabled: env.interjectEnabled,
+            onInterject: {
+                let text = model.draft
+                if !model.interject(text) {
+                    model.reportError("现在不能插话")
+                }
+            },
             onPickDocuments: { urls in
                 for url in urls {
                     // 安全作用域资源（iCloud、其他 App 的容器）必须先开作用域才能读。
