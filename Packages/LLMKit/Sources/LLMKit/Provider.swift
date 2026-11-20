@@ -54,7 +54,7 @@ public struct Capabilities: Codable, Sendable, Equatable, Hashable {
 }
 
 /// 一条厂商路由的完整描述。UI 里"新增厂商"产出的就是这个结构。
-public struct ProviderProfile: Sendable, Equatable, Hashable {
+public struct ProviderProfile: Sendable, Codable, Equatable, Hashable {
     public var id: String
     public var name: String
     public var family: ProviderFamily

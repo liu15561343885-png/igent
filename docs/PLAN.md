@@ -24,7 +24,7 @@
 | 项 | 结论 |
 |---|---|
 | 平台 | iOS 18+，iPhone 优先，iPad 自适应 |
-| 语言/框架 | Swift 6 严格并发、SwiftUI、Observation、GRDB |
+| 语言/框架 | Swift 6 严格并发、SwiftUI、Observation、系统 SQLite（零第三方依赖） |
 | 分发 | 自用：Xcode 直装 / TestFlight / 自签，无需审核 |
 | 后端 | 无。纯客户端 BYOK |
 | 数据边界 | **完全本地**：无后端、无中继、无桥接、无遥测。唯一出站流量是直连用户配置的厂商 API |
@@ -116,7 +116,7 @@ igent/
 │  ├─ Providers/                 Tavily, Brave, Exa, Perplexity, DeepSeek, xAI
 │  └─ Extract/                   Readability 启发式正文抽取
 ├─ Storage/
-│  ├─ Database/                  GRDB migrations, EventStore, Projections, FTS5
+│  ├─ Database/                  SQLite 封装、迁移、EventStore、Projection
 │  ├─ Keychain/
 │  └─ Attachments/               内容寻址图片存储 + 下采样
 ├─ Features/
@@ -738,7 +738,12 @@ public enum ImageJobEvent: Sendable {
 
 ---
 
-## 12. 存储（GRDB）
+## 12. 存储（SQLite，零依赖）
+
+> **偏离记录**：原计划用 GRDB。实测时 GitHub 拉取依赖失败（HTTP/2 framing + 连接超时），
+> 且本项目只需 prepare/bind/step 三个动作。改为直接用系统 `libsqlite3`，
+> 代价是迁移与查询要手写（约 300 行），收益是**构建完全离线、无第三方依赖**。
+> FTS5 需要时再单独评估（系统 SQLite 通常已编译进去）。
 
 ```sql
 CREATE TABLE session (
@@ -855,7 +860,7 @@ public struct RetryPolicy: Sendable {
 - 构建：`xcodebuild -project igent.xcodeproj -scheme igent -destination 'platform=iOS Simulator,name=iPhone 16' build`
 - 单测：`cd Packages/CoreKit && swift test`
 - 工程由 `scripts/gen_xcodeproj.py` 一次性生成；**之后请在 Xcode 里编辑，不要重跑该脚本**（会覆盖）。
-- 依赖：GRDB、swift-markdown、Splash、SwiftMath、SwiftSoup。
+- 依赖：**目前零第三方依赖**（SQLite 走系统库）。后续按需引入 swift-markdown、Splash、SwiftMath、SwiftSoup。
 - 测试：
   - 每个适配器一组 golden fixture（`.json` 请求体 + `.sse` 原始流），断言 `[StreamChunk]` 与最终 `[ContentBlock]`。
   - `SSEDecoder` 单独测：跨 chunk 半截 UTF-8、`\r\n`、多行 data、`[DONE]`、空帧。
@@ -870,7 +875,7 @@ public struct RetryPolicy: Sendable {
 | 阶段 | 工期 | 交付 | 验收 |
 |---|---|---|---|
 | **P0 词汇与传输** | 3–4 天 | `CoreKit` 词汇 + `SSEDecoder` + `BlockAssembler` + `OpenAICompatibleAdapter`、`AnthropicAdapter` | 两个 fixture 回放出相同 `[ContentBlock]`；异常流不崩 |
-| **P1 能聊** | 1.5 周 | App 骨架、GRDB 事件日志、流式渲染、Provider 设置、Keychain、模型发现 | OpenAI 兼容 + Anthropic 各接一个真实 Key 连续对话 20 轮无异常 |
+| **P1 能聊** | 1.5 周 | App 骨架、SQLite 事件日志、流式渲染、Provider 设置、Keychain、模型发现 | OpenAI 兼容 + Anthropic 各接一个真实 Key 连续对话 20 轮无异常 |
 | **P2 四族齐** | 1 周 | Gemini、Responses、Azure；思维链渲染；请求检查器；错误/重试 | 同一段对话在 4 家都能流式、取消、报错可读 |
 | **P3 图片** | 1 周 | 图片输入（下采样/EXIF/HEIC）、三家视觉映射、图像生成（同步+异步 job） | 一张照片在 3 家都被正确描述；异步任务杀进程后能续 |
 | **P4 联网** | 1 周 | Web seam、原生 grounding 三家、自建管线、引用 UI、来源预览 | 无原生检索的模型也能给出可点击的 `[n]` 引用 |
@@ -880,7 +885,7 @@ public struct RetryPolicy: Sendable {
 
 **关键路径**：P0 的 `StreamChunk` 契约和 `BlockAssembler` 一旦定错，后面阶段全部返工。建议 P0 先写 fixture 再写适配器（测试先行）。
 
-**进度**（2026-11-20）：P0 完成 —— `CoreKit`（三份核心定义 + `BlockAssembler` + `SSEDecoder`，23 单测）+ `LLMKit`（**四族齐**：OpenAI 兼容 / Anthropic / Gemini / Responses，37 单测，含 golden 夹具、逐字节分片回放、四族横向一致性对比；Azure 作为 profile 变体覆盖）；`igent.xcodeproj` 可构建并在模拟器运行。尚未做：真实网络联调、`LlmRuntime` 注册表、其余 P1 内容。
+**进度**（2026-11-20）：P0 完成（四族适配器，80 单测；见上）。P1 进行中 —— 已完成 `LlmRuntime`（路由表 + 原子替换，7 单测）、会话模型（`SessionEvent` / `SurfaceOp` / `SurfaceProjection`，8 单测）、`StorageKit`（SQLite 事件日志 + 投影 + 用量聚合 + 厂商配置 + Keychain，13 单测）。尚未做：编排器、聊天界面、设置页、真实网络联调。
 
 **P5 排在 P6 之前**：skill 依赖 `context/message` 与 surface 替换，这两样已在 P1 就位；而压缩（P6）需要把 skill 正文标记为 `ephemeral`，先有 skill 才好验证压缩是否正确丢弃。
 
@@ -905,7 +910,7 @@ public struct RetryPolicy: Sendable {
 ## 18. 下一步（按顺序）
 
 1. 定 `StreamChunk` / `ContentBlock` / `SessionEvent` 三份 Swift 定义（P0 第一步，之后基本冻结）。
-2. 建 Xcode 工程 + 4 个 SPM 包骨架，接 GRDB 与第一个空迁移。
+2. ~~建 Xcode 工程 + 4 个 SPM 包骨架，接 GRDB 与第一个空迁移。~~（已完成，改用系统 SQLite）
 3. 写 `SSEDecoder` + 两个 fixture，跑通 OpenAI 兼容与 Anthropic。
 4. 接 SwiftUI 最小聊天界面，真实 Key 跑通流式。
 5. 加 skill：先只做 `always` + `manual` 两层（不写路由器），验证注入链路正确；`auto` 路由后补。

@@ -34,15 +34,27 @@ public struct TokenUsage: Codable, Sendable, Equatable {
         uncachedInputTokens + (cacheReadTokens ?? 0) + (cacheWriteTokens ?? 0)
     }
 
+    /// 累加两笔用量。
+    ///
+    /// 可选字段的语义要分开处理：
+    /// - 缓存读/写、推理 token 是"可缺省的计数"——多数厂商根本不报。只要有一方报了，
+    ///   另一方按 0 计；**双方都缺**才保持未知。否则一笔没报缓存就会毁掉整段总额。
+    /// - `totalTokens` 是厂商自己给的总数，缺失就是真未知，不做推算。
     public static func + (lhs: TokenUsage, rhs: TokenUsage) -> TokenUsage {
         TokenUsage(
             uncachedInputTokens: lhs.uncachedInputTokens + rhs.uncachedInputTokens,
             outputTokens: lhs.outputTokens + rhs.outputTokens,
             totalTokens: Optional.combine(lhs.totalTokens, rhs.totalTokens, +),
-            cacheReadTokens: Optional.combine(lhs.cacheReadTokens, rhs.cacheReadTokens, +),
-            cacheWriteTokens: Optional.combine(lhs.cacheWriteTokens, rhs.cacheWriteTokens, +),
-            reasoningTokens: Optional.combine(lhs.reasoningTokens, rhs.reasoningTokens, +)
+            cacheReadTokens: sum(lhs.cacheReadTokens, rhs.cacheReadTokens),
+            cacheWriteTokens: sum(lhs.cacheWriteTokens, rhs.cacheWriteTokens),
+            reasoningTokens: sum(lhs.reasoningTokens, rhs.reasoningTokens)
         )
+    }
+
+    /// 双方都缺 → 未知；否则缺失方按 0 计。
+    static func sum(_ lhs: Int?, _ rhs: Int?) -> Int? {
+        if lhs == nil, rhs == nil { return nil }
+        return (lhs ?? 0) + (rhs ?? 0)
     }
 }
 
