@@ -61,15 +61,12 @@ extension AppEnvironment {
             try? keychain.set(value, for: Keychain.account(for: ImageSettingsKey.account))
         }
         imageProviderRevision += 1
-    }
-
-    var isImageGenerationConfigured: Bool {
-        !imageAPIKey.isEmpty && !imageSettings.model.isEmpty
+        refreshCapabilityFlags()
     }
 
     /// 用独立配置构造生成适配器，不碰对话厂商。
     func makeImageAdapter() -> (any ImageGenerationAdapter)? {
-        guard isImageGenerationConfigured else { return nil }
+        guard !imageAPIKey.isEmpty, !imageSettings.model.isEmpty else { return nil }
         let settings = imageSettings
         let key = imageAPIKey
 

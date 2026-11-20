@@ -38,10 +38,6 @@ extension AppEnvironment {
         }
     }
 
-    var isWebSearchConfigured: Bool {
-        makeWebSearchProvider() != nil
-    }
-
     /// 抓取后端。用 DeepSeek 时走它的 Fetch API（直接返回 Markdown，
     /// 服务端已做正文抽取）；其他后端仍用本地 HTML 抽取。
     func makeWebFetchProvider() -> any WebFetchProvider {

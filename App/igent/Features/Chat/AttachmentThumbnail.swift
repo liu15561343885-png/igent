@@ -30,7 +30,7 @@ struct AttachmentThumbnail: View {
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .task(id: reference.id) {
             guard image == nil,
-                  let data = try? await env.attachments.data(for: reference)
+                  let data = try? await env.attachments?.data(for: reference)
             else { return }
             image = UIImage(data: data)
         }

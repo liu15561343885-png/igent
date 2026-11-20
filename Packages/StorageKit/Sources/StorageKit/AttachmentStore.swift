@@ -122,4 +122,6 @@ public actor AttachmentStore {
 public enum AttachmentError: Error, Equatable {
     case missingPath(String)
     case fileNotFound(String)
+    /// 附件存储没能初始化（磁盘/权限问题），整个功能不可用。
+    case storageUnavailable
 }

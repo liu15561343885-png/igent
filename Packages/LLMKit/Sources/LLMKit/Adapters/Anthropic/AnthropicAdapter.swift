@@ -42,6 +42,12 @@ public struct AnthropicAdapter: LlmAdapter {
                 } catch is CancellationError {
                     continuation.yield(.finish(.aborted(LlmFailure(message: "已取消", code: .cancelled)), meta: nil))
                     continuation.finish()
+                } catch let error as URLError where error.code == .cancelled {
+                    // URLSession 在任务取消时抛的是 URLError(.cancelled) 而不是 CancellationError，
+                    // 不单独接住就会显示成"网络连接失败"。
+
+                    continuation.yield(.finish(.aborted(LlmFailure(message: "已取消", code: .cancelled)), meta: nil))
+                    continuation.finish()
                 } catch let failure as LlmFailure {
                     continuation.yield(.finish(.error(failure), meta: nil))
                     continuation.finish()

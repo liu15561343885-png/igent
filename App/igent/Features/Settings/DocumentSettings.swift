@@ -42,6 +42,7 @@ extension AppEnvironment {
         set {
             UserDefaults.standard.set(newValue.rawValue, forKey: "documentPurpose")
             documentPurposeRevision += 1
+            refreshCapabilityFlags()
         }
     }
 }

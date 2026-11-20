@@ -80,18 +80,29 @@
 
 ---
 
+## 一·补 第二轮修复（同日）
+
+| 缺陷 | 修复 |
+|---|---|
+| Gemini 不合并同角色 → 连续两条 user 被 400 拒绝 | 合并相邻同角色；首条为 model 时补一条 user。原测试断言的是错误顺序，已改 |
+| 开头是 model 的请求同样 400 | 同上 |
+| 取消被显示成"网络连接失败" | `URLError(.cancelled)` 单独接住 → `.aborted(.cancelled)`（四个适配器） |
+| `response.incomplete` 一律当超长 | 按 `incomplete_details.reason` 区分，`content_filter` → 内容过滤 |
+| Gemini 提示词被拦截时静默空回复 | 读 `promptFeedback.blockReason` → `.contentFilter` |
+| Keychain 先删后加，添加失败会丢 Key | 改成 `SecItemUpdate` 优先，未命中才 `SecItemAdd` |
+| 换厂商不换模型名 → 首发 404 | 切换时按模型名特征判断并重置 |
+| 会话打开竞态（chat 与 currentSession 错位） | `await` 后校验会话仍是当前会话 |
+| 启动路径 `try!` 崩溃 | 附件存储改可选：存不了图仍能纯文本对话 |
+| 每次 body 求值读 3 次钥匙串 | 三个"是否可用"改为存储属性 + 配置变更时刷新 |
+
 ## 二、未修复（有意留下，附理由）
 
 | 项 | 位置 | 说明 |
 |---|---|---|
-| `try!` 两处 | `AppEnvironment.swift:97,108` | 附件根目录与内存库都建不出来时直接崩溃。是"最后一根稻草"路径，改成静默降级需要引入空实现，收益低于复杂度。**建议**：改成记录 `bootError` + 只读空库。 |
-| Gemini 不合并同角色消息 | `GeminiRequestBuilder.swift:30` | 连续两条 user 会被 400 拒绝。当前主用 GPT，未触发；用 Gemini 前必须修（照抄 Anthropic 的 merge 循环）。 |
-| 主线程做 Keychain 读取 | `ChatView.swift:261-271` | 每次 body 求值读 3 次钥匙串，流式时约 30 次/秒。功能正确，长会话滚动会掉帧。 |
 | 规划/调研/标题的用量不入库 | `SearchPlanner` / `WebResearch` / `TitleService` | 成本统计偏低。 |
 | 调研/OCR/生图不经请求日志 | `CapabilitySettings.swift:113` | 这些路径失败时检查器里看不到，与界面文案不符。 |
 | 搜索/OCR 共用一个钥匙串条目 | `CapabilitySettings.swift:29` | 切到 Tavily/Brave 会把 DeepSeek 的 Key 发过去。 |
 | 三个 `*Revision` 计数器无人读取 | `AppEnvironment.swift:50-55` | 写而不读，改设置后界面可能不刷新。 |
-| Keychain 先删后加 | `Keychain.swift:28-40` | 添加失败会丢掉原 Key；设置页逐键写入。 |
 
 ---
 
@@ -111,7 +122,7 @@
 
 ## 四、测试与覆盖
 
-- 全量：**300 单测**，六个目标全绿。
+- 全量：**309 单测**，六个目标全绿。
 - 干净构建：0 警告（修掉了 7 处 `try?` 未使用告警）。
 - 本轮新增回归测试：附件清理保留引用文件、连续两次压缩、空响应、错误分类、日志脱敏、`invalidRequest` 分支。
 - 仍无覆盖：Keychain（需真机）、迁移升级路径、真实网络。

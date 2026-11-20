@@ -26,11 +26,46 @@ public struct GeminiRequestBuilder: Sendable {
             ])
         }
 
+        // Gemini 要求 user/model 严格交替：连续同角色会被 400 拒绝
+        // （"Please ensure that multiturn requests alternate"）。
+        // 这里与 Anthropic 一样合并相邻同角色，并补掉开头是 model 的情况。
         var contents: [JSONValue] = []
+        var pendingRole: String?
+        var pendingParts: [JSONValue] = []
+
+        func flush() {
+            guard let role = pendingRole, !pendingParts.isEmpty else { return }
+            contents.append(.object([
+                "role": .string(role),
+                "parts": .array(pendingParts)
+            ]))
+            pendingRole = nil
+            pendingParts = []
+        }
+
         for message in options.messages where message.role != .system {
-            if let wire = wire(message, image: image) {
-                contents.append(wire)
+            guard let wire = wire(message, image: image),
+                  let role = wire.objectValue?["role"]?.stringValue,
+                  let parts = wire.objectValue?["parts"]?.arrayValue,
+                  !parts.isEmpty
+            else { continue }
+
+            if role == pendingRole {
+                pendingParts.append(contentsOf: parts)
+            } else {
+                flush()
+                pendingRole = role
+                pendingParts = parts
             }
+        }
+        flush()
+
+        // 首条若是 model，补一条 user，否则同样是 400。
+        if contents.first?.objectValue?["role"] == .string("model") {
+            contents.insert(
+                .object(["role": .string("user"), "parts": .array([.object(["text": .string("（继续）")])])]),
+                at: 0
+            )
         }
         root["contents"] = .array(contents)
 

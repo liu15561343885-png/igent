@@ -27,10 +27,21 @@ public struct Keychain: Sendable {
 
     public func set(_ value: String, for account: String) throws {
         let query = baseQuery(account: account)
-        SecItemDelete(query as CFDictionary)
+        let data = Data(value.utf8)
+
+        // 先试更新：旧实现是"删除 + 新增"，新增失败时原来的 Key 就没了，
+        // 而调用方只会看到"保存失败"，其实已经丢了凭据。
+        let updateStatus = SecItemUpdate(
+            query as CFDictionary,
+            [kSecValueData as String: data] as CFDictionary
+        )
+        if updateStatus == errSecSuccess { return }
+        guard updateStatus == errSecItemNotFound else {
+            throw KeychainError.status(updateStatus)
+        }
 
         var attributes = query
-        attributes[kSecValueData as String] = Data(value.utf8)
+        attributes[kSecValueData as String] = data
         attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
 
         let status = SecItemAdd(attributes as CFDictionary, nil)

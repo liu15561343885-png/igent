@@ -46,7 +46,11 @@ final class AdditionalFamiliesTests: XCTestCase {
         let built = GeminiRequestBuilder(profile: .gemini()).body(options)
         let roles = built.objectValue?["contents"]?.arrayValue?
             .compactMap { $0.objectValue?["role"]?.stringValue } ?? []
-        XCTAssertEqual(roles, ["model", "user"])
+        // assistant 映射成 model；开头若是 model 会补一条 user（Gemini 不接受首条是 model），
+        // 所以这里断言"包含 model 且以 user 收尾"，而不是固定数组。
+        XCTAssertTrue(roles.contains("model"), "assistant 应映射为 model 角色")
+        XCTAssertEqual(roles.first, "user")
+        XCTAssertEqual(roles.last, "user")
     }
 
     func testGeminiURLPutsModelInPathAndAltSSE() throws {
@@ -203,5 +207,82 @@ final class AdditionalFamiliesTests: XCTestCase {
         results.append(try await run(responses.stream(options)).blocks.last?.plainText ?? "")
 
         XCTAssertEqual(Set(results), ["你好，世界"], "四族输出不一致：\(results)")
+    }
+}
+
+final class GeminiAlternationTests: XCTestCase {
+    private func contents(_ messages: [Message]) -> [[String: JSONValue]] {
+        let body = GeminiRequestBuilder(profile: .gemini()).body(
+            GenerateOptions(provider: "g", model: "m", messages: messages)
+        )
+        return (body.objectValue?["contents"]?.arrayValue ?? []).compactMap { $0.objectValue }
+    }
+
+    /// 连续两条 user 必须合并成一条，否则 Gemini 直接 400。
+    func testConsecutiveUserTurnsAreMerged() {
+        let messages = [
+            Message(role: .user, blocks: [.text("第一句")], source: .user),
+            Message(role: .user, blocks: [.text("第二句")], source: .user)
+        ]
+        let result = contents(messages)
+        XCTAssertEqual(result.count, 1)
+        XCTAssertEqual(result.first?["role"], .string("user"))
+    }
+
+    /// 开头是 model 也要补一条 user。
+    func testLeadingModelTurnGetsUserPrefix() {
+        let messages = [
+            Message(role: .assistant, blocks: [.text("我先说")], source: .model(provider: "g", model: "m", meta: nil)),
+            Message(role: .user, blocks: [.text("好")], source: .user)
+        ]
+        let result = contents(messages)
+        XCTAssertEqual(result.first?["role"], .string("user"))
+        XCTAssertEqual(result.count, 3)
+    }
+
+    /// 正常交替时不能多合并。
+    func testAlternatingTurnsArePreserved() {
+        let messages = [
+            Message(role: .user, blocks: [.text("问")], source: .user),
+            Message(role: .assistant, blocks: [.text("答")], source: .model(provider: "g", model: "m", meta: nil)),
+            Message(role: .user, blocks: [.text("再问")], source: .user)
+        ]
+        XCTAssertEqual(contents(messages).map { $0["role"] }, [.string("user"), .string("model"), .string("user")])
+    }
+}
+
+final class FinishReasonEdgeTests: XCTestCase {
+    /// incomplete 的原因是 content_filter 时要报内容过滤，不能报"超长"。
+    func testResponsesIncompleteContentFilter() {
+        let sse = """
+        data: {"type":"response.incomplete","response":{"incomplete_details":{"reason":"content_filter"}}}
+
+        """
+        var parser = OpenAIResponsesStreamParser()
+        var chunks = parser.feed(Data(sse.utf8))
+        chunks += parser.finish()
+        let reason = chunks.compactMap { chunk -> FinishReason? in
+            if case let .finish(r, _) = chunk { r } else { nil }
+        }.last
+        guard case .contentFilter = reason else {
+            return XCTFail("应映射为 contentFilter，实际 \(String(describing: reason))")
+        }
+    }
+
+    /// 提示词被拦截时只有 promptFeedback，没有 candidates。
+    func testGeminiPromptFeedbackBecomesContentFilter() {
+        let sse = """
+        data: {"promptFeedback":{"blockReason":"SAFETY"}}
+
+        """
+        var parser = GeminiStreamParser()
+        var chunks = parser.feed(Data(sse.utf8))
+        chunks += parser.finish()
+        let reason = chunks.compactMap { chunk -> FinishReason? in
+            if case let .finish(r, _) = chunk { r } else { nil }
+        }.last
+        guard case .contentFilter = reason else {
+            return XCTFail("应映射为 contentFilter，实际 \(String(describing: reason))")
+        }
     }
 }

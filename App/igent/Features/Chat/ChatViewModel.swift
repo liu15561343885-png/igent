@@ -83,7 +83,7 @@ final class ChatViewModel {
 
     private let store: SessionStore
     private let orchestrator: TurnOrchestrator
-    private let attachments: AttachmentStore
+    private let attachments: AttachmentStore?
     private let planner: SearchPlanner
     /// 文档解析器。为 nil 表示没配 DeepSeek Key，附件入口应禁用。
     var documentRecognizer: (any DocumentRecognizer)?
@@ -99,7 +99,7 @@ final class ChatViewModel {
         sessionID: SessionID,
         store: SessionStore,
         orchestrator: TurnOrchestrator,
-        attachments: AttachmentStore,
+        attachments: AttachmentStore?,
         planner: SearchPlanner
     ) {
         self.sessionID = sessionID
@@ -113,6 +113,9 @@ final class ChatViewModel {
     func attach(_ data: Data) async {
         do {
             let normalized = try ImageNormalizer.normalize(data)
+            guard let attachments else {
+                throw AttachmentError.storageUnavailable
+            }
             pendingImage = try await attachments.save(normalized)
             lastError = nil
         } catch {
@@ -608,6 +611,7 @@ final class ChatViewModel {
             for image in generated {
                 // 生成结果也走一遍归一化：不同厂商给的尺寸与格式都不统一。
                 let normalized = try ImageNormalizer.normalize(image.data)
+                guard let attachments else { throw AttachmentError.storageUnavailable }
                 refs.append(try await attachments.save(normalized))
             }
             guard !refs.isEmpty else { throw ImageGenerationError.emptyResponse }

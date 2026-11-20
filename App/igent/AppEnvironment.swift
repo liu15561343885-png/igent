@@ -17,7 +17,7 @@ final class AppEnvironment {
     let orchestrator: TurnOrchestrator
     let keychain: Keychain
     /// 图片附件（内容寻址）。
-    let attachments: AttachmentStore
+    let attachments: AttachmentStore?
     /// skill 注册表（扫 Documents/Skills）。
     let skillRegistry: SkillRegistry
     let compaction: CompactionService
@@ -35,7 +35,17 @@ final class AppEnvironment {
 
     /// 当前选中的厂商与模型，跨会话记住。
     var activeProfileID: String? {
-        didSet { UserDefaults.standard.set(activeProfileID, forKey: "activeProfileID") }
+        didSet {
+            UserDefaults.standard.set(activeProfileID, forKey: "activeProfileID")
+            guard oldValue != activeProfileID,
+                  let profile = profiles.first(where: { $0.id == activeProfileID })
+            else { return }
+            // 换厂商却不换模型名，首次发送会把上一家的模型名发过去——直接 404。
+            // 只有当前模型为空或明显不属于新厂商时才重置，避免覆盖用户手填的模型名。
+            if activeModel.isEmpty || !activeModel.lowercased().contains(Self.modelHint(for: profile.family)) {
+                activeModel = profile.defaultModel
+            }
+        }
     }
 
     var activeModel: String {
@@ -44,7 +54,25 @@ final class AppEnvironment {
 
     /// 界面需要观察的变化点，UserDefaults 本身不参与 SwiftUI 的依赖追踪。
     var webSearchKind: String {
-        didSet { UserDefaults.standard.set(webSearchKind, forKey: "webSearchKind") }
+        didSet {
+            UserDefaults.standard.set(webSearchKind, forKey: "webSearchKind")
+            refreshCapabilityFlags()
+        }
+    }
+
+    /// 三个"功能是否可用"的布尔。
+    ///
+    /// 它们原本是计算属性，每次求值都要读钥匙串；而 ChatView 的 body 在流式时
+    /// 每秒重算约 30 次，等于每秒 90 次 SecItemCopyMatching，是明确的掉帧源。
+    /// 改成存储属性 + 在配置变更处显式刷新。
+    private(set) var webSearchReady = false
+    private(set) var imageGenerationReady = false
+    private(set) var documentParsingReady = false
+
+    func refreshCapabilityFlags() {
+        webSearchReady = makeWebSearchProvider() != nil
+        imageGenerationReady = !imageAPIKey.isEmpty && !imageSettings.model.isEmpty
+        documentParsingReady = makeDocumentRecognizer() != nil
     }
 
     /// 图片厂商配置变化时自增，方便界面刷新（配置存在 UserDefaults 里，不参与观察）。
@@ -105,8 +133,13 @@ final class AppEnvironment {
     init(databaseURL: URL) {
         keychain = Keychain()
         runtime = LlmRuntime()
-        attachments = (try? AttachmentStore(root: databaseURL.deletingLastPathComponent().appendingPathComponent("Attachments")))
-            ?? (try! AttachmentStore(root: FileManager.default.temporaryDirectory.appendingPathComponent("Attachments")))
+        // 两个目录都建不出来时不能直接崩：用户至少还能纯文本对话，
+        // 崩溃则什么也做不了。存图失败的提示在调用点给出。
+        attachments = (try? AttachmentStore(
+            root: databaseURL.deletingLastPathComponent().appendingPathComponent("Attachments")
+        )) ?? (try? AttachmentStore(
+            root: FileManager.default.temporaryDirectory.appendingPathComponent("Attachments")
+        ))
         skillRegistry = SkillRegistry(
             provider: FileSystemSkillProvider(root: Self.skillsRoot)
         )
@@ -158,6 +191,7 @@ final class AppEnvironment {
             activeModel = activeProfile?.defaultModel ?? ""
         }
         await reloadSkills()
+        refreshCapabilityFlags()
 
         // didSet 只在用户改开关时触发；启动时要把已存的值真正应用到编排器上。
         await orchestrator.setPolicy(autoCompactionEnabled ? .default : nil)
@@ -236,7 +270,7 @@ final class AppEnvironment {
         // 一张带图的消息，用来验证视觉链路与气泡渲染。
         if let data = Self.demoImageData(),
            let normalized = try? ImageNormalizer.normalize(data),
-           let ref = try? await attachments.save(normalized) {
+           let ref = try? await attachments?.save(normalized) {
             let question = Message(
                 role: .user,
                 blocks: [.image(ref), .text("这张图里写了什么？")],
@@ -383,6 +417,9 @@ final class AppEnvironment {
         )
         model.streamingInputMode = streamingInput
         await model.load()
+        // await 期间用户可能已经切到别的会话；这时不能再覆盖 chat，
+        // 否则界面显示的会话与 currentSession 会对不上（导出/统计会取错）。
+        guard currentSession?.id == session.id else { return }
         chat = model
     }
 
@@ -395,6 +432,7 @@ final class AppEnvironment {
         // 数据库没打开时（内存兜底）引用集合必然是空的，
         // 此时清理等于把历史图片全部删掉——宁可这轮不清理。
         guard bootError == nil else { return }
+        guard let attachments else { return }
         guard let paths = try? await store.referencedAttachmentPaths() else { return }
         // 10 分钟宽限：选图后尚未发送、或正在生成的图片还没有事件引用。
         _ = await attachments.prune(referenced: paths, minimumAge: 600)
@@ -450,6 +488,7 @@ final class AppEnvironment {
                 keychain.delete(Keychain.account(for: profile.id))
             } else {
                 try keychain.set(apiKey, for: Keychain.account(for: profile.id))
+                refreshCapabilityFlags()
             }
             await reloadProviders()
             if activeProfileID == nil { activeProfileID = profile.id }
@@ -476,11 +515,23 @@ final class AppEnvironment {
             keychain.delete(Keychain.account(for: "websearch"))
         } else {
             try? keychain.set(value, for: Keychain.account(for: "websearch"))
+            refreshCapabilityFlags()
         }
     }
 
     func apiKey(for profile: ProviderProfile) -> String {
         keychain.get(Keychain.account(for: profile.id)) ?? ""
+    }
+}
+
+extension AppEnvironment {
+    /// 用模型名前缀判断"这个名字是不是这家的"，只用于切换厂商时的兜底重置。
+    static func modelHint(for family: ProviderFamily) -> String {
+        switch family {
+        case .anthropic: "claude"
+        case .gemini: "gemini"
+        case .openAIResponses, .openAICompatible: "gpt"
+        }
     }
 }
 
@@ -508,8 +559,6 @@ struct SessionStats: Sendable {
 extension AppEnvironment {
     /// 压缩较早的历史。返回被压掉的消息数，nil 表示不值得压。
     /// 文档解析复用 DeepSeek 的 Key：OCR 是 DeepSeek 的工具接口，按页计费。
-    var isDocumentParsingConfigured: Bool { makeDocumentRecognizer() != nil }
-
     func makeDocumentRecognizer() -> (any DocumentRecognizer)? {
         guard WebSearchKind(rawValue: webSearchKind) == .deepseek else { return nil }
         let key = keychain.get(Keychain.account(for: "websearch")) ?? ""

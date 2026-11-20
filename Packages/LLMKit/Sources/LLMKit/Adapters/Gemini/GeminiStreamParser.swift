@@ -61,6 +61,16 @@ public struct GeminiStreamParser: Sendable {
         }
 
         var chunks: [StreamChunk] = []
+
+        // 被安全策略拦截的提示词不会返回 candidates，只有 promptFeedback。
+        // 不读它的话这里就是"正常结束但零内容"，用户什么也看不到。
+        if let feedback = object["promptFeedback"]?.objectValue,
+           let block = feedback["blockReason"]?.stringValue,
+           finishReason == nil {
+            nativeStopReason = block
+            finishReason = .contentFilter(block)
+        }
+
         if let candidate = object["candidates"]?.arrayValue?.first?.objectValue {
             let parts = candidate["content"]?.objectValue?["parts"]?.arrayValue ?? []
             for part in parts {

@@ -65,9 +65,16 @@ public struct OpenAIResponsesStreamParser: Sendable {
 
         case "response.incomplete":
             captureResponse(object["response"]?.objectValue)
-            finishReason = .maxTokens
-            nativeStopReason = object["response"]?.objectValue?["incomplete_details"]?
+            let reason = object["response"]?.objectValue?["incomplete_details"]?
                 .objectValue?["reason"]?.stringValue
+            nativeStopReason = reason
+            // incomplete 不只有"超长"一种：内容过滤也会走这里。
+            // 一律当超长处理会让界面提示"调大上限"，方向完全错。
+            if reason == "content_filter" {
+                finishReason = .contentFilter(reason)
+            } else {
+                finishReason = .maxTokens
+            }
             return terminal()
 
         case "response.failed", "error":

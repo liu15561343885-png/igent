@@ -101,7 +101,7 @@ struct ChatView: View {
 
     private var title: String {
         if model.imageMode {
-            return env.isImageGenerationConfigured ? "生成图片" : "生成图片（未配置）"
+            return env.imageGenerationReady ? "生成图片" : "生成图片（未配置）"
         }
         return env.activeModel.isEmpty ? "未选择模型" : env.activeModel
     }
@@ -262,13 +262,13 @@ struct ChatView: View {
             pendingDocuments: model.pendingDocuments,
             isParsingDocument: model.isParsingDocument,
             parsingStatus: model.parsingStatus,
-            allowsDocument: env.isDocumentParsingConfigured && !model.imageMode,
+            allowsDocument: env.documentParsingReady && !model.imageMode,
             webSearchEnabled: model.webSearchEnabled,
-            webSearchAvailable: env.isWebSearchConfigured,
+            webSearchAvailable: env.webSearchReady,
             isSearching: model.isSearching,
             imageMode: model.imageMode,
             imageModel: env.imageSettings.model,
-            imageAvailable: env.isImageGenerationConfigured,
+            imageAvailable: env.imageGenerationReady,
             skillSummaries: env.skillSummaries,
             pendingSkillName: model.pendingSkill?.summary.name,
             onToggleWebSearch: { model.setWebSearch($0) },
