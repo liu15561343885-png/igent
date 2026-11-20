@@ -23,6 +23,8 @@ final class AppEnvironment {
     let compaction: CompactionService
     let titles: TitleService
     let planner: SearchPlanner
+    /// 生成中申请后台时间，避免切出去就断流。
+    let backgroundKeeper = BackgroundKeeper()
     /// 已加载 skill 的同步快照，供发送时拼 system。
     var skillDefinitions: [String: SkillDefinition] = [:]
     var skillSummaries: [SkillSummary] = []
@@ -647,6 +649,21 @@ final class AppEnvironment {
         refreshCapabilityFlags()
     }
     #endif
+
+    /// 进入后台：正在生成时申请后台时间，并标记这一轮可能被系统中断。
+    func didEnterBackground() {
+        guard let chat else { return }
+        chat.markBackgrounded()
+        // 只要这一轮还开着就申请后台时间，不依赖 isStreaming 的瞬时值。
+        guard chat.isStreaming else { return }
+        backgroundKeeper.begin(reason: "turn")
+    }
+
+    /// 回到前台：还回后台时间；若这一轮已经死掉，给它两秒收尾再判定为中断。
+    func willEnterForeground() {
+        backgroundKeeper.end()
+        chat?.recoverFromBackground()
+    }
 
     /// 清理没有被任何会话引用的图片文件。
     ///

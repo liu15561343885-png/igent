@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct RootView: View {
     @Environment(AppEnvironment.self) private var env
@@ -20,6 +21,12 @@ struct RootView: View {
                         .task { await env.ensureSession() }
                 }
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
+            env.didEnterBackground()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+            env.willEnterForeground()
         }
         .task {
             await env.bootstrap()

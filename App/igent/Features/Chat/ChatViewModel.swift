@@ -46,6 +46,9 @@ final class ChatViewModel {
     private(set) var isParsingDocument = false
     /// 解析进度文案，供输入条显示。
     private(set) var parsingStatus: String?
+    /// 这一轮是否跨过后台。用来把"被系统挂起"和"真的没网"区分开。
+    private var interruptedByBackground = false
+
     /// 回合序号。停止时的兜底逻辑靠它判断"是否已经开了新回合"，避免误清新回合的状态。
     private var turnCounter = 0
     /// 插话：打断当前回合后要接着发出去的那句话。
@@ -493,6 +496,21 @@ final class ChatViewModel {
         )
     }
 
+    func markBackgrounded() {
+        interruptedByBackground = true
+    }
+
+    /// 回到前台。
+    ///
+    /// 这里**不能**超时强杀：模型首字常见要 20–30 秒，切出去几秒回来时请求
+    /// 往往还在正常等待，强杀等于把好好的回合砍掉（这条已经踩过一次）。
+    /// 存活就让它跑完；真的断了，URLSession 的报错会走 `.finished` 分支，
+    /// 由 `interruptedByBackground` 翻译成"被系统中断"而不是"没网"。
+    func recoverFromBackground() {
+        // 保留标记，等 `.finished` 到达时使用；成功结束时在那边清掉。
+        if !isStreaming { interruptedByBackground = false }
+    }
+
     func stop() {
         if isParsingDocument {
             // 解析阶段直接掐断；已经选中的文件不再恢复（需要重新选）。
@@ -566,8 +584,14 @@ final class ChatViewModel {
                 PriceTable.estimate($0, model: lastModel).amountUSD
             }
             if case let .error(failure) = result.finish {
-                lastError = Self.describe(failure)
+                // 后台被挂起时 URLSession 统一报 network；这时说"网络连接失败"是误导。
+                if interruptedByBackground, failure.code == .network {
+                    lastError = "切到后台时这一轮被系统中断，可以重新发送"
+                } else {
+                    lastError = Self.describe(failure)
+                }
             }
+            interruptedByBackground = false
             await refreshMetrics()
             streamTask = nil
             // 插话是在取消之后才发的：等这一轮的收尾（部分内容已落库）完成再开新回合。
@@ -655,7 +679,7 @@ final class ChatViewModel {
         case .quota: "额度已用尽"
         case .contextWindowExceeded: "上下文超出模型上限"
         case .noAdapter: "这家厂商还没配置好"
-        case .network: "网络连接失败"
+        case .network: "网络中断，可以重新发送（切到后台也可能导致断开）"
         case .contentFilter: "内容被安全策略拦截"
         case .cancelled: "已取消"
         case .invalidRequest: "请求参数被拒绝"
