@@ -5,6 +5,7 @@ public struct AnthropicAdapter: LlmAdapter {
     public let profile: ProviderProfile
     public let apiKey: String
     public let transport: StreamTransport
+    public let imageResolver: (any ImageResolver)?
     /// Anthropic 要求显式版本头，否则拒绝请求。
     public var apiVersion: String
 
@@ -12,19 +13,22 @@ public struct AnthropicAdapter: LlmAdapter {
         profile: ProviderProfile = .anthropic(),
         apiKey: String,
         transport: StreamTransport = URLSessionTransport(),
-        apiVersion: String = "2023-06-01"
+        apiVersion: String = "2023-06-01",
+        imageResolver: (any ImageResolver)? = nil
     ) {
         self.profile = profile
         self.apiKey = apiKey
         self.transport = transport
         self.apiVersion = apiVersion
+        self.imageResolver = imageResolver
     }
 
     public func stream(_ options: GenerateOptions) -> AsyncThrowingStream<StreamChunk, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    let request = try makeRequest(options)
+                    let images = await resolveImages(options, profile: profile, resolver: imageResolver)
+                    let request = try makeRequest(options, images: images)
                     var parser = AnthropicStreamParser()
                     for try await data in transport.bytes(for: request) {
                         for chunk in parser.feed(data) {
@@ -50,7 +54,7 @@ public struct AnthropicAdapter: LlmAdapter {
         }
     }
 
-    func makeRequest(_ options: GenerateOptions) throws -> URLRequest {
+    func makeRequest(_ options: GenerateOptions, images: [String: ResolvedImage] = [:]) throws -> URLRequest {
         guard let url = profile.chatURL(for: options.model) else {
             throw AdapterError.invalidURL(profile.baseURL.absoluteString + profile.chatPath)
         }
@@ -63,7 +67,9 @@ public struct AnthropicAdapter: LlmAdapter {
         for (key, value) in profile.extraHeaders {
             request.setValue(value, forHTTPHeaderField: key)
         }
-        let body = AnthropicRequestBuilder(profile: profile).body(options)
+        let body = AnthropicRequestBuilder(profile: profile).body(options) { ref in
+            images[ref.id].map { ($0.mediaType, $0.base64) }
+        }
         request.httpBody = try JSONEncoder().encode(body)
         return request
     }

@@ -63,15 +63,18 @@ public actor TurnOrchestrator {
     public var isRunning: Bool { activeTask != nil }
 
     /// 发起一个回合，返回实时更新流。
+    ///
+    /// 传 blocks 而不是字符串：图片输入是"文字 + 图片"的组合消息，
+    /// 用字符串签名会在加图片时被迫改一遍所有调用点。
     public func send(
-        _ text: String,
+        _ blocks: [ContentBlock],
         in sessionID: SessionID,
         configuration: Configuration
     ) -> AsyncStream<TurnUpdate> {
         AsyncStream { continuation in
             let task = Task {
                 await self.run(
-                    text,
+                    blocks,
                     sessionID: sessionID,
                     configuration: configuration,
                     continuation: continuation
@@ -82,6 +85,14 @@ public actor TurnOrchestrator {
         }
     }
 
+    public func send(
+        _ text: String,
+        in sessionID: SessionID,
+        configuration: Configuration
+    ) -> AsyncStream<TurnUpdate> {
+        send([.text(text)], in: sessionID, configuration: configuration)
+    }
+
     public func cancel() {
         activeTask?.cancel()
     }
@@ -89,7 +100,7 @@ public actor TurnOrchestrator {
     // MARK: - 执行
 
     private func run(
-        _ text: String,
+        _ blocks: [ContentBlock],
         sessionID: SessionID,
         configuration: Configuration,
         continuation: AsyncStream<TurnUpdate>.Continuation
@@ -112,7 +123,7 @@ public actor TurnOrchestrator {
             step = 1
 
             try await store.append(.turnStart(turn: turn), to: sessionID)
-            let userMessage = Message(role: .user, blocks: [.text(text)], source: .user)
+            let userMessage = Message(role: .user, blocks: blocks, source: .user)
             try await store.append(.userMessage(userMessage), to: sessionID, surfaceOp: .append)
             try await store.append(.stepStart(turn: turn, step: step), to: sessionID)
             continuation.yield(.started(turn: turn))

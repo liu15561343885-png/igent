@@ -4,6 +4,7 @@ import Foundation
 import LLMKit
 import Observation
 import StorageKit
+import UIKit
 
 /// 应用级依赖装配。只在启动时创建一次。
 @MainActor
@@ -13,6 +14,8 @@ final class AppEnvironment {
     let runtime: LlmRuntime
     let orchestrator: TurnOrchestrator
     let keychain: Keychain
+    /// 图片附件（内容寻址）。
+    let attachments: AttachmentStore
     /// 所有厂商请求的旁路记录，供请求检查器展示。
     let requestLog = RequestLog()
 
@@ -36,6 +39,8 @@ final class AppEnvironment {
     init(databaseURL: URL) {
         keychain = Keychain()
         runtime = LlmRuntime()
+        attachments = (try? AttachmentStore(root: databaseURL.deletingLastPathComponent().appendingPathComponent("Attachments")))
+            ?? (try! AttachmentStore(root: FileManager.default.temporaryDirectory.appendingPathComponent("Attachments")))
 
         do {
             let store = try SessionStore(url: databaseURL)
@@ -110,7 +115,53 @@ final class AppEnvironment {
                 : .userMessage(message)
             try? await store.append(event, to: session.id, surfaceOp: .append)
         }
+        // 一张带图的消息，用来验证视觉链路与气泡渲染。
+        if let data = Self.demoImageData(),
+           let normalized = try? ImageNormalizer.normalize(data),
+           let ref = try? await attachments.save(normalized) {
+            let question = Message(
+                role: .user,
+                blocks: [.image(ref), .text("这张图里写了什么？")],
+                source: .user
+            )
+            try? await store.append(.userMessage(question), to: session.id, surfaceOp: .append)
+
+            let answer = Message(
+                role: .assistant,
+                blocks: [.text("图上是一块青绿色背景，中间用白色粗体写着 **igent**。")],
+                source: .model(provider: "demo", model: "gpt-4o-mini", meta: nil)
+            )
+            try? await store.append(
+                .assistantMessage(answer, usage: nil, interrupted: false),
+                to: session.id,
+                surfaceOp: .append
+            )
+        }
+
         await open(session: session)
+    }
+
+    private static func demoImageData() -> Data? {
+        let size = CGSize(width: 600, height: 400)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        let image = renderer.image { context in
+            UIColor.systemTeal.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            let text = "igent" as NSString
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 84, weight: .bold),
+                .foregroundColor: UIColor.white
+            ]
+            let textSize = text.size(withAttributes: attributes)
+            text.draw(
+                at: CGPoint(
+                    x: (size.width - textSize.width) / 2,
+                    y: (size.height - textSize.height) / 2
+                ),
+                withAttributes: attributes
+            )
+        }
+        return image.pngData()
     }
     #endif
 
@@ -126,7 +177,12 @@ final class AppEnvironment {
 
     func open(session: SessionSummary) async {
         currentSession = session
-        let model = ChatViewModel(sessionID: session.id, store: store, orchestrator: orchestrator)
+        let model = ChatViewModel(
+            sessionID: session.id,
+            store: store,
+            orchestrator: orchestrator,
+            attachments: attachments
+        )
         await model.load()
         chat = model
     }
@@ -160,7 +216,12 @@ final class AppEnvironment {
                 log: requestLog,
                 label: profile.name
             )
-            let adapter = AdapterFactory.make(profile: profile, apiKey: key, transport: transport)
+            let adapter = AdapterFactory.make(
+                profile: profile,
+                apiKey: key,
+                transport: transport,
+                imageResolver: StorageImageResolver(store: attachments)
+            )
             if let registration = try? await runtime.register(providers: [profile.id], adapter: adapter) {
                 registrations.append(registration)
             }

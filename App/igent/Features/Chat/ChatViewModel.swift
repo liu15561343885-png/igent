@@ -19,9 +19,12 @@ final class ChatViewModel {
     private(set) var lastError: String?
 
     var draft = ""
+    /// 待发送的图片（已归一化并落盘）。
+    private(set) var pendingImage: ImageAttachmentRef?
 
     private let store: SessionStore
     private let orchestrator: TurnOrchestrator
+    private let attachments: AttachmentStore
     private var streamTask: Task<Void, Never>?
 
     /// 流式刷新节流：约 30fps，避免每 token 重建整个列表。
@@ -29,10 +32,31 @@ final class ChatViewModel {
     private var pending = ""
     private var lastFlush = Date.distantPast
 
-    init(sessionID: SessionID, store: SessionStore, orchestrator: TurnOrchestrator) {
+    init(
+        sessionID: SessionID,
+        store: SessionStore,
+        orchestrator: TurnOrchestrator,
+        attachments: AttachmentStore
+    ) {
         self.sessionID = sessionID
         self.store = store
         self.orchestrator = orchestrator
+        self.attachments = attachments
+    }
+
+    /// 接收用户从相册选的原始数据：归一化（EXIF 转正、限长边、转 JPEG）后落盘。
+    func attach(_ data: Data) async {
+        do {
+            let normalized = try ImageNormalizer.normalize(data)
+            pendingImage = try await attachments.save(normalized)
+            lastError = nil
+        } catch {
+            lastError = "图片处理失败：\(error)"
+        }
+    }
+
+    func removePendingImage() {
+        pendingImage = nil
     }
 
     func load() async {
@@ -45,9 +69,16 @@ final class ChatViewModel {
 
     func send(configuration: TurnOrchestrator.Configuration) {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !isStreaming else { return }
+        let image = pendingImage
+        guard !text.isEmpty || image != nil, !isStreaming else { return }
+
+        // 图片放在文字前面：视觉模型通常先看图再读指令。
+        var blocks: [ContentBlock] = []
+        if let image { blocks.append(.image(image)) }
+        if !text.isEmpty { blocks.append(.text(text)) }
 
         draft = ""
+        pendingImage = nil
         lastError = nil
         isStreaming = true
         isThinking = true
@@ -56,12 +87,12 @@ final class ChatViewModel {
         lastFlush = .distantPast
 
         // 立刻把用户消息显示出来，不等落库往返。
-        messages.append(Message(role: .user, blocks: [.text(text)], source: .user))
+        messages.append(Message(role: .user, blocks: blocks, source: .user))
 
         streamTask = Task { [weak self] in
             guard let self else { return }
             let stream = await self.orchestrator.send(
-                text,
+                blocks,
                 in: self.sessionID,
                 configuration: configuration
             )

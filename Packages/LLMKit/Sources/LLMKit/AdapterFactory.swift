@@ -6,17 +6,30 @@ public enum AdapterFactory {
     public static func make(
         profile: ProviderProfile,
         apiKey: String,
-        transport: StreamTransport = URLSessionTransport()
+        transport: StreamTransport = URLSessionTransport(),
+        imageResolver: (any ImageResolver)? = nil
     ) -> any LlmAdapter {
         switch profile.family {
         case .openAICompatible:
-            OpenAICompatibleAdapter(profile: profile, apiKey: apiKey, transport: transport)
+            OpenAICompatibleAdapter(
+                profile: profile, apiKey: apiKey,
+                transport: transport, imageResolver: imageResolver
+            )
         case .openAIResponses:
-            OpenAIResponsesAdapter(profile: profile, apiKey: apiKey, transport: transport)
+            OpenAIResponsesAdapter(
+                profile: profile, apiKey: apiKey,
+                transport: transport, imageResolver: imageResolver
+            )
         case .anthropic:
-            AnthropicAdapter(profile: profile, apiKey: apiKey, transport: transport)
+            AnthropicAdapter(
+                profile: profile, apiKey: apiKey,
+                transport: transport, imageResolver: imageResolver
+            )
         case .gemini:
-            GeminiAdapter(profile: profile, apiKey: apiKey, transport: transport)
+            GeminiAdapter(
+                profile: profile, apiKey: apiKey,
+                transport: transport, imageResolver: imageResolver
+            )
         }
     }
 }

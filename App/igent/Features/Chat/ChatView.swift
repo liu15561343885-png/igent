@@ -19,8 +19,14 @@ struct ChatView: View {
             Composer(
                 text: draftBinding,
                 isStreaming: model.isStreaming,
+                pendingImage: model.pendingImage,
+                allowsImage: env.activeProfile?.capabilities.vision ?? false,
                 onSend: send,
-                onStop: { model.stop() }
+                onStop: { model.stop() },
+                onPickImage: { data in
+                    Task { await model.attach(data) }
+                },
+                onRemoveImage: { model.removePendingImage() }
             )
         }
         .background(Color(.systemBackground))
@@ -100,12 +106,15 @@ struct ChatView: View {
                 .padding(.vertical, 12)
             }
             .scrollDismissesKeyboard(.interactively)
-            // 内容不足一屏时贴底，和 iMessage 一致。
-            .defaultScrollAnchor(.bottom)
             .onChange(of: model.messages.count) { scroll(proxy) }
             .onChange(of: model.streamingText) { scroll(proxy) }
             .onChange(of: model.isThinking) { scroll(proxy) }
-            .onAppear { scroll(proxy, animated: false) }
+            .task {
+                // 首屏必须等一次布局：onAppear 时单元格还没量高，
+                // scrollTo 会停在上一步的位置，看起来像"没滚到底"。
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                scrollToLast(proxy, animated: false)
+            }
         }
     }
 
@@ -138,6 +147,17 @@ struct ChatView: View {
             model: env.activeModel
         )
         model.send(configuration: configuration)
+    }
+
+    /// 优先滚到最后一条消息（懒加载容器里它一定被创建），兜底滚到哨兵。
+    private func scrollToLast(_ proxy: ScrollViewProxy, animated: Bool = false) {
+        let target: AnyHashable = model.messages.last.map { AnyHashable($0.id) } ?? AnyHashable(Anchor.bottom)
+        let action = { proxy.scrollTo(target, anchor: .bottom) }
+        if animated {
+            withAnimation(.easeOut(duration: 0.2), action)
+        } else {
+            action()
+        }
     }
 
     private func scroll(_ proxy: ScrollViewProxy, animated: Bool = true) {

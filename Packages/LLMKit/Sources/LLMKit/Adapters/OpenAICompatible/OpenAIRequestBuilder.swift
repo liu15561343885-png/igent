@@ -68,25 +68,11 @@ public struct OpenAIRequestBuilder: Sendable {
         case .system: role = "system"
         }
 
-        let hasStructured = message.blocks.contains { block in
-            switch block {
-            case .image, .context: true
-            default: false
-            }
-        }
-
-        // 纯文本走字符串，报文最简单，也最不容易被兼容端点拒绝。
-        if !hasStructured {
-            let text = message.blocks.compactMap { block -> String? in
-                if case let .text(value) = block { value } else { nil }
-            }.joined()
-            return .object([
-                "role": .string(role),
-                "content": .string(text)
-            ])
-        }
-
         var parts: [JSONValue] = []
+        // 只有真正塞进非文本内容时才用数组；否则退回字符串，
+        // 某些严格实现的兼容端点不接受纯文本数组。
+        var hasRichContent = false
+
         for block in message.blocks {
             switch block {
             case let .text(text):
@@ -101,12 +87,14 @@ public struct OpenAIRequestBuilder: Sendable {
                 continue
             case let .image(ref):
                 if let url = imageURL(ref) {
+                    hasRichContent = true
                     parts.append(.object([
                         "type": .string("image_url"),
                         "image_url": .object(["url": .string(url)])
                     ]))
                 }
             case let .context(evidence):
+                hasRichContent = true
                 parts.append(.object([
                     "type": .string("text"),
                     "text": .string(render(evidence))
@@ -115,6 +103,15 @@ public struct OpenAIRequestBuilder: Sendable {
                 continue
             }
         }
+
+        if !hasRichContent {
+            let text = parts.compactMap { $0.objectValue?["text"]?.stringValue }.joined()
+            return .object([
+                "role": .string(role),
+                "content": .string(text)
+            ])
+        }
+
         return .object([
             "role": .string(role),
             "content": .array(parts)

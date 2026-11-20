@@ -28,6 +28,12 @@ struct MessageBubble: View {
         return hasCode ? 0.92 : Theme.bubbleMaxWidth
     }
 
+    private var images: [ImageAttachmentRef] {
+        message.blocks.compactMap { block -> ImageAttachmentRef? in
+            if case let .image(ref) = block { ref } else { nil }
+        }
+    }
+
     private var body_: String {
         message.blocks.compactMap { block -> String? in
             if case let .text(value) = block { value } else { nil }
@@ -39,6 +45,12 @@ struct MessageBubble: View {
             if isUser { Spacer(minLength: 44) }
 
             VStack(alignment: .leading, spacing: 8) {
+                if !images.isEmpty {
+                    ForEach(images, id: \.id) { ref in
+                        AttachmentThumbnail(reference: ref)
+                    }
+                }
+
                 if let reasoning {
                     // 思维链默认折起，只留一行提示；点开可读。
                     DisclosureGroup {

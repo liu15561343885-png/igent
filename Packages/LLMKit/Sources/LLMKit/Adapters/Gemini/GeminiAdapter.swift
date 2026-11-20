@@ -5,22 +5,26 @@ public struct GeminiAdapter: LlmAdapter {
     public let profile: ProviderProfile
     public let apiKey: String
     public let transport: StreamTransport
+    public let imageResolver: (any ImageResolver)?
 
     public init(
         profile: ProviderProfile = .gemini(),
         apiKey: String,
-        transport: StreamTransport = URLSessionTransport()
+        transport: StreamTransport = URLSessionTransport(),
+        imageResolver: (any ImageResolver)? = nil
     ) {
         self.profile = profile
         self.apiKey = apiKey
         self.transport = transport
+        self.imageResolver = imageResolver
     }
 
     public func stream(_ options: GenerateOptions) -> AsyncThrowingStream<StreamChunk, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    let request = try makeRequest(options)
+                    let images = await resolveImages(options, profile: profile, resolver: imageResolver)
+                    let request = try makeRequest(options, images: images)
                     var parser = GeminiStreamParser()
                     for try await data in transport.bytes(for: request) {
                         for chunk in parser.feed(data) {
@@ -46,7 +50,7 @@ public struct GeminiAdapter: LlmAdapter {
         }
     }
 
-    func makeRequest(_ options: GenerateOptions) throws -> URLRequest {
+    func makeRequest(_ options: GenerateOptions, images: [String: ResolvedImage] = [:]) throws -> URLRequest {
         guard let url = profile.chatURL(for: options.model) else {
             throw AdapterError.invalidURL(profile.baseURL.absoluteString + profile.chatPath)
         }
@@ -58,7 +62,9 @@ public struct GeminiAdapter: LlmAdapter {
         for (key, value) in profile.extraHeaders {
             request.setValue(value, forHTTPHeaderField: key)
         }
-        let body = GeminiRequestBuilder(profile: profile).body(options)
+        let body = GeminiRequestBuilder(profile: profile).body(options) { ref in
+            images[ref.id].map { (mimeType: $0.mediaType, base64: $0.base64) }
+        }
         request.httpBody = try JSONEncoder().encode(body)
         return request
     }
