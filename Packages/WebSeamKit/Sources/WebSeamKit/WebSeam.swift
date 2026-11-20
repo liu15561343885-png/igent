@@ -37,6 +37,8 @@ public protocol WebFetchProvider: Sendable {
 
 public enum WebError: Error, Equatable {
     case badStatus(Int)
+    /// 服务端在响应体里给出的错误信息（这些 API 常以 200 + error 字段返回业务错误）。
+    case message(String)
     case unsupportedContentType(String)
     case tooLarge
     case emptyBody

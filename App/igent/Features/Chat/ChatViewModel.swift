@@ -89,6 +89,7 @@ final class ChatViewModel {
     func send(
         configuration: TurnOrchestrator.Configuration,
         webSearch: (any WebSearchProvider)? = nil,
+        webFetch: (any WebFetchProvider)? = nil,
         skills: [SkillDefinition] = []
     ) {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -133,7 +134,7 @@ final class ChatViewModel {
                 let outcome = await WebContextBuilder().build(
                     query: query,
                     search: provider,
-                    fetcher: HTTPFetcher()
+                    fetcher: webFetch ?? HTTPFetcher()
                 )
                 self.isSearching = false
                 outgoing.append(.context(outcome.evidence))

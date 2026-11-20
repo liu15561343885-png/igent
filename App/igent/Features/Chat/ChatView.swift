@@ -330,6 +330,7 @@ struct ChatView: View {
         model.send(
             configuration: configuration,
             webSearch: env.makeWebSearchProvider(),
+            webFetch: env.makeWebFetchProvider(),
             skills: skills
         )
     }
