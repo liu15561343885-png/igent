@@ -44,9 +44,8 @@ final class AppEnvironment {
         didSet { UserDefaults.standard.set(webSearchKind, forKey: "webSearchKind") }
     }
 
-    var imageModel: String {
-        didSet { UserDefaults.standard.set(imageModel, forKey: "imageModel") }
-    }
+    /// 图片厂商配置变化时自增，方便界面刷新（配置存在 UserDefaults 里，不参与观察）。
+    var imageProviderRevision = 0
 
     var activeProfile: ProviderProfile? {
         profiles.first { $0.id == activeProfileID }
@@ -77,7 +76,6 @@ final class AppEnvironment {
         activeModel = UserDefaults.standard.string(forKey: "activeModel") ?? ""
         webSearchKind = UserDefaults.standard.string(forKey: "webSearchKind")
             ?? WebSearchKind.off.rawValue
-        imageModel = UserDefaults.standard.string(forKey: "imageModel") ?? "gpt-image-1"
     }
 
     private(set) var currentSession: SessionSummary?
@@ -103,6 +101,11 @@ final class AppEnvironment {
     /// 仅用于模拟器截图与界面迭代：`-seedDemoConversation` 启动参数会灌一段示例对话。
     private func seedDemoConversationIfRequested() async {
         guard ProcessInfo.processInfo.arguments.contains("-seedDemoConversation") else { return }
+
+        // 让两个模式开关处于"可用"状态，方便截图与界面迭代。
+        webSearchKind = WebSearchKind.tavily.rawValue
+        setWebSearchKey("demo-key")
+        setImageAPIKey("demo-key")
 
         let existing = (try? await store.profiles()) ?? []
         if existing.isEmpty {

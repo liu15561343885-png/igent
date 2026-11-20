@@ -26,6 +26,9 @@ final class ChatViewModel {
     private(set) var isSearching = false
     /// 手动指定的 skill（下一轮生效，发完即清）。
     var pendingSkill: SkillDefinition?
+    /// 图片生成模式：输入框的下一句被当作绘图提示词。
+    private(set) var imageMode = false
+    private(set) var isGeneratingImage = false
     /// 待发送的图片（已归一化并落盘）。
     private(set) var pendingImage: ImageAttachmentRef?
 
@@ -137,6 +140,28 @@ final class ChatViewModel {
         }
     }
 
+    /// 两个模式互斥：开一个就关另一个，避免"边检索边画图"这种没有意义的状态。
+    func setWebSearch(_ enabled: Bool) {
+        webSearchEnabled = enabled
+        if enabled { imageMode = false }
+    }
+
+    func setImageMode(_ enabled: Bool) {
+        imageMode = enabled
+        if enabled { webSearchEnabled = false }
+    }
+
+    /// 取走输入框内容并清空（图片模式需要先拿到提示词）。
+    func takeDraft() -> String {
+        let value = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        draft = ""
+        return value
+    }
+
+    func reportError(_ message: String) {
+        lastError = message
+    }
+
     func stop() {
         streamTask?.cancel()
         streamTask = nil
@@ -187,6 +212,9 @@ final class ChatViewModel {
         let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isStreaming else { return false }
         lastError = nil
+
+        isGeneratingImage = true
+        defer { isGeneratingImage = false }
 
         do {
             let ask = Message(role: .user, blocks: [.text("生成图片：\(trimmed)")], source: .user)

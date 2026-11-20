@@ -17,6 +17,7 @@ struct ProviderSettingsView: View {
             Form {
                 providerSection
                 modelSection
+                imageSection
                 webSearchSection
                 debugSection
             }
@@ -163,6 +164,58 @@ struct ProviderSettingsView: View {
                         .foregroundStyle(.tint)
                 }
             }
+        }
+    }
+
+    /// 图片生成是独立配置：能聊天的厂商不一定能画图。
+    @ViewBuilder
+    private var imageSection: some View {
+        Section {
+            Picker("协议族", selection: Binding(
+                get: { env.imageSettings.family },
+                set: { family in
+                    var settings = env.imageSettings
+                    settings.family = family
+                    env.imageSettings = settings
+                }
+            )) {
+                Text("OpenAI 兼容").tag(ProviderFamily.openAICompatible)
+                Text("Gemini").tag(ProviderFamily.gemini)
+            }
+
+            TextField("Base URL", text: Binding(
+                get: { env.imageSettings.baseURL },
+                set: { value in
+                    var settings = env.imageSettings
+                    settings.baseURL = value
+                    env.imageSettings = settings
+                }
+            ))
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .keyboardType(.URL)
+
+            TextField("模型", text: Binding(
+                get: { env.imageSettings.model },
+                set: { value in
+                    var settings = env.imageSettings
+                    settings.model = value
+                    env.imageSettings = settings
+                }
+            ))
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+
+            SecureField("图片 API Key", text: Binding(
+                get: { env.imageAPIKey },
+                set: { env.setImageAPIKey($0) }
+            ))
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+        } header: {
+            Text("图片生成")
+        } footer: {
+            Text("与对话厂商分开配置：对话可以用 DeepSeek，画图用 OpenAI。OpenAI 填 gpt-image-1 或 dall-e-3；Gemini 填 gemini-2.5-flash-image，Base URL 填到 v1beta。")
         }
     }
 

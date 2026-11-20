@@ -703,6 +703,9 @@ skill 只能**影响模型怎么说**，不能**让模型做什么**：
 
 ### 9.7 UI
 
+skill 入口在**输入框左侧，用弹出气泡**（`.popover` + `presentationCompactAdaptation(.popover)`），
+不是整屏 sheet：选 skill 是个轻动作，弹个气泡更接近 iMessage 的轻交互。
+
 | 位置 | 内容 |
 |---|---|
 | 设置 → Skills | 列表（名称/描述/来源/开关/token 估算），点击预览与编辑 |
@@ -772,6 +775,10 @@ UI 在压缩点显示一条可展开的"已压缩 12 条历史（点击查看原
 |---|---|---|
 | OpenAI Images | `POST /images/generations` | `b64_json` 或 `url`（都要处理，厂商不保证） |
 | Gemini Images | `POST /models/{model}:generateContent` + `responseModalities` | `inlineData` |
+
+**图片厂商与对话厂商分开配置**：能聊天的厂商不一定能画图（DeepSeek、Kimi 都没有图像模型），
+能画图的也可能不是同一个账号。所以设置里是独立的一组：协议族 / Base URL / 模型 / Key，
+Key 存钥匙串的独立账号 `imageprovider`。
 
 **未做异步 job**（BFL / fal / Replicate 的 submit+poll）。原因：这几家的提交载荷、
 轮询地址、状态枚举各不相同，没有一份实测过的规格，硬写等于猜。要做的话需要
@@ -916,6 +923,9 @@ public struct RetryPolicy: Sendable {
   暂用 iOS 18 等效手段：`.ultraThinMaterial`、`.defaultScrollAnchor(.bottom)`、
   弹簧动画、`Color.primary.opacity(0.08)` 的自适应气泡底色。升级 SDK 后可再对齐。
 - 刷新节流：每 33ms 提交一次 UI 更新（约 30fps），用 `AsyncStream(bufferingPolicy: .bufferingNewest(1))` 做合并。
+- **输入条分两层**：上面是输入行（skill 气泡 + 文本框 + 发送），下面是模式行（联网搜索 / 生成图片两个药丸开关）。
+- **两个模式互斥**：开一个自动关另一个。由 `ChatViewModel` 保证，不靠界面禁用——
+  否则"边检索边画图"这种无意义状态迟早会从某个入口漏出来。
 - Markdown：块级解析缓存；只重解析"最后一个未闭合块"，已完成块直接复用已渲染视图。
 - 思维链：单独折叠区，默认收起，显示"已思考 12s · 1,842 tokens"。
 - 滚动锚定：用户未上滑时自动吸底；一旦上滑则固定位置，并显示"回到最新"按钮。
@@ -956,7 +966,7 @@ public struct RetryPolicy: Sendable {
 
 **关键路径**：P0 的 `StreamChunk` 契约和 `BlockAssembler` 一旦定错，后面阶段全部返工。建议 P0 先写 fixture 再写适配器（测试先行）。
 
-**进度**（2026-11-20）：功能清单全部落地 —— 四族对话适配器、图片输入、图片生成（同步两族）、联网检索（Tavily/Brave + 抓取抽取）、Skill（三层激活）。**累计 204 单测**，六个包全绿。未做：图片生成的异步 job、真实 Key 联调。
+**进度**（2026-11-20）：功能清单全部落地（对话 / 图片输入 / 图片生成 / 联网检索 / Skill），**204 单测**。界面按 iMessage 风格重塑：输入条分两层、两个模式开关互斥、skill 用气泡菜单、图片生成独立配置。未做：图片异步 job、真实 Key 联调。
 
 **P5 排在 P6 之前**：skill 依赖 `context/message` 与 surface 替换，这两样已在 P1 就位；而压缩（P6）需要把 skill 正文标记为 `ephemeral`，先有 skill 才好验证压缩是否正确丢弃。
 

@@ -8,8 +8,6 @@ struct ChatView: View {
 
     @State private var showSettings = false
     @State private var showSessions = false
-    @State private var showImageGen = false
-    @State private var showSkillPicker = false
 
     private var draftBinding: Binding<String> {
         Binding(get: { model.draft }, set: { model.draft = $0 })
@@ -18,25 +16,7 @@ struct ChatView: View {
     var body: some View {
         VStack(spacing: 0) {
             transcript
-            Composer(
-                text: draftBinding,
-                isStreaming: model.isStreaming,
-                pendingImage: model.pendingImage,
-                allowsImage: env.activeProfile?.capabilities.vision ?? false,
-                webSearchEnabled: model.webSearchEnabled,
-                webSearchAvailable: env.isWebSearchConfigured,
-                isSearching: model.isSearching,
-                pendingSkillName: model.pendingSkill?.summary.name,
-                onToggleWebSearch: { model.webSearchEnabled.toggle() },
-                onPickSkill: { showSkillPicker = true },
-                onRemoveSkill: { model.pendingSkill = nil },
-                onSend: send,
-                onStop: { model.stop() },
-                onPickImage: { data in
-                    Task { await model.attach(data) }
-                },
-                onRemoveImage: { model.removePendingImage() }
-            )
+            composer
         }
         .background(Color(.systemBackground))
         .navigationBarTitleDisplayMode(.inline)
@@ -49,7 +29,7 @@ struct ChatView: View {
             }
             ToolbarItem(placement: .principal) {
                 VStack(spacing: 1) {
-                    Text(env.activeModel.isEmpty ? "未选择模型" : env.activeModel)
+                    Text(title)
                         .font(.headline)
                         .lineLimit(1)
                     Text(env.activeProfile?.name ?? "去设置里添加厂商")
@@ -59,21 +39,10 @@ struct ChatView: View {
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button {
-                        showImageGen = true
-                    } label: {
-                        Label("生成图片", systemImage: "sparkles")
-                    }
-                    Button {
-                        showSettings = true
-                    } label: {
-                        Label("设置", systemImage: "slider.horizontal.3")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
+                Button { showSettings = true } label: {
+                    Image(systemName: "slider.horizontal.3")
                 }
-                .accessibilityLabel("更多")
+                .accessibilityLabel("设置")
             }
         }
         .sheet(isPresented: $showSettings) {
@@ -82,12 +51,43 @@ struct ChatView: View {
         .sheet(isPresented: $showSessions) {
             SessionListView(currentSessionID: model.sessionID)
         }
-        .sheet(isPresented: $showImageGen) {
-            ImageGenView(model: model)
+    }
+
+    private var title: String {
+        if model.imageMode {
+            return env.isImageGenerationConfigured ? "生成图片" : "生成图片（未配置）"
         }
-        .sheet(isPresented: $showSkillPicker) {
-            skillPicker
-        }
+        return env.activeModel.isEmpty ? "未选择模型" : env.activeModel
+    }
+
+    private var composer: some View {
+        Composer(
+            text: draftBinding,
+            isStreaming: model.isStreaming,
+            isBusy: model.isGeneratingImage,
+            pendingImage: model.pendingImage,
+            allowsImage: env.activeProfile?.capabilities.vision ?? false,
+            webSearchEnabled: model.webSearchEnabled,
+            webSearchAvailable: env.isWebSearchConfigured,
+            isSearching: model.isSearching,
+            imageMode: model.imageMode,
+            imageModel: env.imageSettings.model,
+            imageAvailable: env.isImageGenerationConfigured,
+            skillSummaries: env.skillSummaries,
+            pendingSkillName: model.pendingSkill?.summary.name,
+            onToggleWebSearch: { model.setWebSearch($0) },
+            onToggleImageMode: { model.setImageMode($0) },
+            onSelectSkill: { name in
+                model.pendingSkill = env.skillDefinitions[name]
+            },
+            onRemoveSkill: { model.pendingSkill = nil },
+            onSend: send,
+            onStop: { model.stop() },
+            onPickImage: { data in
+                Task { await model.attach(data) }
+            },
+            onRemoveImage: { model.removePendingImage() }
+        )
     }
 
     private var transcript: some View {
@@ -164,6 +164,11 @@ struct ChatView: View {
     }
 
     private func send() {
+        if model.imageMode {
+            sendImagePrompt()
+            return
+        }
+
         guard let profile = env.activeProfile else {
             showSettings = true
             return
@@ -180,40 +185,20 @@ struct ChatView: View {
         )
     }
 
-    /// 优先滚到最后一条消息（懒加载容器里它一定被创建），兜底滚到哨兵。
-    private var skillPicker: some View {
-        NavigationStack {
-            List {
-                if env.skillSummaries.isEmpty {
-                    ContentUnavailableView(
-                        "还没有 skill",
-                        systemImage: "text.badge.plus",
-                        description: Text("在设置里打开 Skill，把 SKILL.md 放进 Documents/Skills。")
-                    )
-                }
-                ForEach(env.skillSummaries) { summary in
-                    Button {
-                        model.pendingSkill = env.skillDefinitions[summary.name]
-                        showSkillPicker = false
-                    } label: {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(summary.name)
-                                .font(.callout.monospaced())
-                                .foregroundStyle(.primary)
-                            Text(summary.description)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            }
-            .navigationTitle("选择 Skill")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") { showSkillPicker = false }
-                }
-            }
+    private func sendImagePrompt() {
+        let prompt = model.takeDraft()
+        guard !prompt.isEmpty else { return }
+        guard let adapter = env.makeImageAdapter() else {
+            model.reportError("图片生成还没配置：设置 → 图片生成，填 Base URL、模型和 Key。")
+            showSettings = true
+            return
+        }
+        Task {
+            await model.generateImage(
+                prompt: prompt,
+                adapter: adapter,
+                model: env.imageSettings.model
+            )
         }
     }
 
